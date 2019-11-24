@@ -1,7 +1,7 @@
 from crf import CRF
 from read_data import read_data
 
-file_path = r'./small_train.data'
+file_path = r'./data/small_train.data'
 data = read_data(file_path)
 
 learing_rate = 5e-2
