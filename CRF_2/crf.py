@@ -394,11 +394,11 @@ class LinearChainCRF():
 
 
 # For testing
-#crf = LinearChainCRF()
+crf = LinearChainCRF()
 
-#crf.train('data/chunking/simple_train.data', 'data/chunking/model_5.json')
-#crf.load('data/chunking/model_5.json')
-#crf.test('data/chunking/simple_test.data')
+crf.train('data/chunking/simple_train.data', 'data/chunking/model_5.json')
+crf.load('data/chunking/model_5.json')
+crf.test('data/chunking/simple_test.data')
 
 #crf.train('data/chunking_2/train.txt', 'data/chunking_2/model_4.json')
 #crf.load('data/chunking_2/model_4.json')
