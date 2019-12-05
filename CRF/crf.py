@@ -38,7 +38,38 @@ class CRF():
             tables.append(table)
 
         return tables
-    
+    # def _generate_potential_table(params, num_labels, feature_set, X, inference=True):
+    # """
+    # Generates a potential table using given observations.
+    # * potential_table[t][prev_y, y]
+    #     := exp(inner_product(params, feature_vector(prev_y, y, X, t)))
+    #     (where 0 <= t < len(X))
+    # """
+    # tables = list()
+    # for t in range(len(X)):
+    #     table = np.zeros((num_labels, num_labels))
+    #     if inference:
+    #         for (prev_y, y), score in feature_set.calc_inner_products(params, X, t):
+    #             if prev_y == -1:
+    #                 table[:, y] += score
+    #             else:
+    #                 table[prev_y, y] += score
+    #     else:
+    #         for (prev_y, y), feature_ids in X[t]:
+    #             score = sum(params[fid] for fid in feature_ids)
+    #             if prev_y == -1:
+    #                 table[:, y] += score
+    #             else:
+    #                 table[prev_y, y] += score
+    #     table = np.exp(table)
+    #     if t == 0:
+    #         table[STARTING_LABEL_INDEX+1:] = 0
+    #     else:
+    #         table[:,STARTING_LABEL_INDEX] = 0
+    #         table[STARTING_LABEL_INDEX,:] = 0
+    #     tables.append(table)
+
+    # return tables
     def forward_backward(self, sentence, inference):
         sentence_length = len(sentence)
         potential_tables = self.potential_table(sentence, inference=inference)
