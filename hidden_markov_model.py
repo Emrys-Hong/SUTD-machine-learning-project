@@ -101,53 +101,6 @@ class HMM:
         self.train_emission()
         self.train_transition()
 
-    def _viterbi(self, x):
-        """transition_matrix: before log
-        x: [1, 2, 4, 19, ...]
-        transition: after log
-        return: 
-                path: (len(x), )
-                log(max_score)
-        """
-
-        score = np.zeros( (len(x)+2, len(self.tags)-2) )
-        argmax = np.zeros( (len(x)+2, len(self.tags)-2), dtype=np.int)
-        transition, emission = np.log(self.transition), np.log(self.emission)
-        score[1, :] = transition[-1, :-1] + emission[x[0], :-2] # initialization at j=1
-        for j in range(2, len(x)+1): 
-            for t in range(len(self.tags)-2):
-                pi = score[j-1, :]  # (num_of_tags-2,)
-                a = transition[:-1, t] # (num_of_tags-2,)
-                b = emission[x[j-1], t] # (1,)
-                top1 = (pi + a).argsort()[-1]
-                argmax[j, t] = top1
-                score[j, t] = (pi + a)[top1] + b
-        # j=n+1 step
-        pi = score[len(x)]
-        a = transition[:-1, -1]
-        argmax_stop = int( (pi+a).argsort()[-1] )
-        max_stop = (pi+a)[argmax_stop]
-        argmax = argmax[2:-1]
-        # decoding
-        path = [argmax_stop]
-        temp_index = argmax_stop
-        for i in range(len(argmax)-1, -1, -1):
-            temp_index = argmax[i, temp_index]
-            path.append(temp_index)
-        return path[::-1], max_stop
-
-
-    def predict(self, dev_x_filename, output_filename):
-        assert hasattr(self, 'transition') and hasattr(self, 'emission'), "run self.train() first"
-        with open(output_filename, 'w') as f:
-            words, dev_x = get_test_data(dev_x_filename, self.word2index)
-            for i, (ws,o) in enumerate(zip(words, dev_x)):
-                path, log_max_score = self._viterbi(o)
-                for w, p in zip(ws, path):
-                    f.write(w + ' ' + self.tags[p] + '\n')
-                f.write('\n')
-        return
-
     def _viterbi_top_k(self, x, k=7):
         """transition_matrix: before log
         x: [1, 2, 4, 19, ...]

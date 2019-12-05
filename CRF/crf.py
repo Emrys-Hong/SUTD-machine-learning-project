@@ -59,7 +59,6 @@ class CRF():
         pos = sentence_length - 1
         for label_id in range(self.num_labels):
             beta[pos,label_id] = 1.0
-        
         for pos in range(sentence_length-2, -1, -1):
             for label_id in range(1, self.num_labels):
                 beta[pos, label_id] = beta[pos+1,:].dot(potential_tables[pos+1][label_id,:])
@@ -68,8 +67,19 @@ class CRF():
 
         return alpha, beta, Z, potential_tables
     
+    def inference(self, X):
+        """
+        Finds the best label sequence.
+        """
+        potential_table = self.potential_table(X, inference=True)
+        Yprime = self.viterbi(X, potential_table)
+        return Yprime
+
+    def viterbi(self, X, potential_table):
+        return 0
+
     def log_likelihood(self, square_sigma, inference):
-        empirical_counts = self.Feature.get_empirical_counts()
+        empirical_counts = self.Feature.get_empirical_counts() # number of labels and their count
         total_logZ = 0
         expected_counts = np.zeros(self.num_features)
 
