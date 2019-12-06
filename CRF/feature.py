@@ -1,94 +1,163 @@
-import numpy as np
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 from collections import Counter
-from collections import defaultdict
 
-from read_data import read_data
+import numpy as np
 
-START_LABEL = '@@'
-START_LABEL_IDX = 0
 
-class Feature():
-    
-    def __init__(self, data=None):
-        self.feature_dict = dict()                                  # feature function dictionary
-        self.num_features = 0                                       # num of feature function
-        self.empirical_counts = Counter()                           # counts of each feature function
-        self.label_dict = {START_LABEL: START_LABEL_IDX}            # label dictionary
-        self.label_array = [START_LABEL]                            # unique label array
-        self.data = data
+STARTING_LABEL = '*'        # Label of t=-1
+STARTING_LABEL_INDEX = 0
 
-    def extract_feature_at_pos(self, sentence, pos):
-        features = []
-        features.append('U02:%s' % sentence[pos][0])
-        features.append('U12:%s' % sentence[pos][1])
-        return features
 
-    def _add_feature_func(self, prev_label_idx, cur_label_idx, sentence, pos):
-        for feature_str in self.extract_feature_at_pos(sentence, pos):
-            if feature_str in self.feature_dict.keys():
-                if (prev_label_idx, cur_label_idx) in self.feature_dict[feature_str].keys():
-                    self.empirical_counts[self.feature_dict[feature_str][(prev_label_idx, cur_label_idx)]] += 1 
+def default_feature_func(_, X, t):
+    """
+    Returns a list of feature strings.
+    (Default feature function)
+    :param X: An observation vector
+    :param t: time
+    :return: A list of feature strings
+    """
+    length = len(X)
+
+    features = list()
+    features.append('U[0]:%s' % X[t][0])
+    if t < length-1:
+        features.append('U[+1]:%s' % (X[t+1][0]))
+        features.append('B[0]:%s %s' % (X[t][0], X[t+1][0]))
+        if t < length-2:
+            features.append('U[+2]:%s' % (X[t+2][0]))
+    if t > 0:
+        features.append('U[-1]:%s' % (X[t-1][0]))
+        features.append('B[-1]:%s %s' % (X[t-1][0], X[t][0]))
+        if t > 1:
+            features.append('U[-2]:%s' % (X[t-2][0]))
+
+    return features
+
+
+class FeatureSet():
+    feature_dic = dict()
+    observation_set = set()
+    empirical_counts = Counter()
+    num_features = 0
+
+    label_dic = {STARTING_LABEL: STARTING_LABEL_INDEX}
+    label_array = [STARTING_LABEL]
+
+    feature_func = default_feature_func
+
+    def __init__(self, feature_func=None):
+        # Sets a custom feature function.
+        if feature_func is not None:
+            self.feature_func = feature_func
+
+    def scan(self, data):
+        """
+        Constructs a feature set, a label set,
+            and a counter of empirical counts of each feature from the input data.
+        :param data: A list of (X, Y) pairs. (X: observation vector , Y: label vector)
+        """
+        # Constructs a feature set, and counts empirical counts.
+        for X, Y in data:
+            prev_y = STARTING_LABEL_INDEX
+            for t in range(len(X)):
+                # Gets a label id
+                try:
+                    y = self.label_dic[Y[t]]
+                except KeyError:
+                    y = len(self.label_dic)
+                    self.label_dic[Y[t]] = y
+                    self.label_array.append(Y[t])
+                # Adds features
+                self._add(prev_y, y, X, t)
+                prev_y = y
+
+    def load(self, feature_dic, num_features, label_array):
+        self.num_features = num_features
+        self.label_array = label_array
+        self.label_dic = {label: i for label, i in enumerate(label_array)}
+        self.feature_dic = self.deserialize_feature_dic(feature_dic)
+
+    def __len__(self):
+        return self.num_features
+
+    def _add(self, prev_y, y, X, t):
+        """
+        Generates features, constructs feature_dic.
+        :param prev_y: previous label
+        :param y: present label
+        :param X: observation vector
+        :param t: time
+        """
+        for feature_string in self.feature_func(X, t):
+            if feature_string in self.feature_dic.keys():
+                if (prev_y, y) in self.feature_dic[feature_string].keys():
+                    self.empirical_counts[self.feature_dic[feature_string][(prev_y, y)]] += 1
                 else:
                     feature_id = self.num_features
-                    self.feature_dict[feature_str][(prev_label_idx, cur_label_idx)] = feature_id
+                    self.feature_dic[feature_string][(prev_y, y)] = feature_id
                     self.empirical_counts[feature_id] += 1
                     self.num_features += 1
-                if (-1, cur_label_idx) in self.feature_dict[feature_str].keys():
-                    self.empirical_counts[self.feature_dict[feature_str][(-1, cur_label_idx)]] += 1
+                if (-1, y) in self.feature_dic[feature_string].keys():
+                    self.empirical_counts[self.feature_dic[feature_string][(-1, y)]] += 1
                 else:
                     feature_id = self.num_features
-                    self.feature_dict[feature_str][(-1, cur_label_idx)] = feature_id
+                    self.feature_dic[feature_string][(-1, y)] = feature_id
                     self.empirical_counts[feature_id] += 1
                     self.num_features += 1
             else:
-                self.feature_dict[feature_str] = dict()
-                # unigram
+                self.feature_dic[feature_string] = dict()
+                # Bigram feature
                 feature_id = self.num_features
-                self.feature_dict[feature_str][(-1, cur_label_idx)] = feature_id
+                self.feature_dic[feature_string][(prev_y, y)] = feature_id
                 self.empirical_counts[feature_id] += 1
                 self.num_features += 1
-                # bigram
+                # Unigram feature
                 feature_id = self.num_features
-                self.feature_dict[feature_str][(prev_label_idx, cur_label_idx)] = feature_id
+                self.feature_dic[feature_string][(-1, y)] = feature_id
                 self.empirical_counts[feature_id] += 1
                 self.num_features += 1
 
-    def _scan(self):
+    def get_feature_vector(self, prev_y, y, X, t):
         """
-        generate all feature functions and their counts in the training data
+        Returns a list of feature ids of given observation and transition.
+        :param prev_y: previous label
+        :param y: present label
+        :param X: observation vector
+        :param t: time
+        :return: A list of feature ids
         """
-        for sentence in self.data:
-            prev_label_idx = START_LABEL_IDX
-            for pos in range(len(sentence)):
-                cur_label = sentence[pos][-1]
-                try:
-                    cur_label_idx = self.label_dict[cur_label]
-                except KeyError:
-                    cur_label_idx = len(self.label_dict.keys())
-                    self.label_dict[cur_label] = cur_label_idx
-                    self.label_array.append(cur_label)
-                self._add_feature_func(prev_label_idx, cur_label_idx, sentence, pos)
-                prev_label_idx = cur_label_idx
-
-    def calc_inner_product_score(self, params, sentence, pos):
-        inner_product = defaultdict(int)
-        for feature_str in self.extract_feature_at_pos(sentence, pos):
+        feature_ids = list()
+        for feature_string in self.feature_func(X, t):
             try:
-                for (prev_label_idx, cur_label_idx), feature_id in self.feature_dict[feature_str].items():
-                    inner_product[(prev_label_idx, cur_label_idx)] += params[feature_id]
+                feature_ids.append(self.feature_dic[feature_string][(prev_y, y)])
             except KeyError:
                 pass
-        return [((prev_label_idx, cur_label_idx), score) for (prev_label_idx, cur_label_idx), score in inner_product.items()]
-        
-    def get_feature_func_id(self, sentence, pos):
-        feature_func_id_dict = dict()
-        for feature_str in self.extract_feature_at_pos(sentence, pos):
-            for (prev_label_idx, cur_label_idx), feature_id in self.feature_dict[feature_str].items():
-                if (prev_label_idx, cur_label_idx) in feature_func_id_dict.keys():
-                    feature_func_id_dict[(prev_label_idx, cur_label_idx)].add(feature_id)
-                else:
-                    feature_func_id_dict[(prev_label_idx, cur_label_idx)] = {feature_id}
-        return [((prev_label_idx, cur_label_idx), feature_ids) for (prev_label_idx, cur_label_idx), feature_ids in feature_func_id_dict.items()]
+        return feature_ids
+
+    def get_labels(self):
+        """
+        Returns a label dictionary and array.
+        """
+        return self.label_dic, self.label_array
+
+    def calc_inner_products(self, params, X, t):
+        """
+        Calculates inner products of the given parameters and feature vectors of the given observations at time t.
+        :param params: parameter vector
+        :param X: observation vector
+        :param t: time
+        :return:
+        """
+        inner_products = Counter()
+        for feature_string in self.feature_func(X, t):
+            try:
+                for (prev_y, y), feature_id in self.feature_dic[feature_string].items():
+                    inner_products[(prev_y, y)] += params[feature_id]
+            except KeyError:
+                pass
+        return [((prev_y, y), score) for (prev_y, y), score in inner_products.items()]
 
     def get_empirical_counts(self):
         empirical_counts = np.ndarray((self.num_features,))
@@ -96,24 +165,29 @@ class Feature():
             empirical_counts[feature_id] = counts
         return empirical_counts
 
-    def serialize(self):
+    def get_feature_list(self, X, t):
+        feature_list_dic = dict()
+        for feature_string in self.feature_func(X, t):
+            for (prev_y, y), feature_id in self.feature_dic[feature_string].items():
+                if (prev_y, y) in feature_list_dic.keys():
+                    feature_list_dic[(prev_y, y)].add(feature_id)
+                else:
+                    feature_list_dic[(prev_y, y)] = {feature_id}
+        return [((prev_y, y), feature_ids) for (prev_y, y), feature_ids in feature_list_dic.items()]
+
+    def serialize_feature_dic(self):
         serialized = dict()
-        for feature_str in self.feature_dict.keys():
-            serialized[feature_str] = dict()
-            for (prev_label_idx, cur_label_idx), feature_id in self.feature_dict[feature_str].items():
-                serialized[feature_str]['%d_%d' % (prev_label_idx, cur_label_idx)] = feature_id
+        for feature_string in self.feature_dic.keys():
+            serialized[feature_string] = dict()
+            for (prev_y, y), feature_id in self.feature_dic[feature_string].items():
+                serialized[feature_string]['%d_%d' % (prev_y, y)] = feature_id
         return serialized
 
-    def deserialize(self, serialized):
-        feature_dict = dict()
-        for feature_str in serialized.keys():
-            feature_dict[feature_str] = dict()
-            for label_pair_str, feature_id in serialized[feature_str].items():
-                prev_label, cur_label = label_pair_str.split('_')
-                prev_label_idx, cur_label_idx = int(prev_label), int(cur_label)
-                feature_dict[feature_str][(prev_label_idx, cur_label_idx)] = feature_id
-        return feature_dict
-
-    def load(self, feature_dict):
-        self.feature_dict = self.deserialize(feature_dict)
-
+    def deserialize_feature_dic(self, serialized):
+        feature_dic = dict()
+        for feature_string in serialized.keys():
+            feature_dic[feature_string] = dict()
+            for transition_string, feature_id in serialized[feature_string].items():
+                prev_y, y = transition_string.split('_')
+                feature_dic[feature_string][(int(prev_y), int(y))] = feature_id
+        return feature_dic
