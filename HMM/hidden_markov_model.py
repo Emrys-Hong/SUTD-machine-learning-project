@@ -115,13 +115,17 @@ class HMM:
         transition, emission = np.log(self.transition), np.log(self.emission)
         # initialization at j=1
         score[1, :] = (transition[-1, :-1] + emission[x[0], :-2])[:, None] 
+
+        # j=2, ..., n
         for j in range(2, len(x)+1): 
             for t in range(len(self.tags)-2):
                 pi = score[j-1, :]  # (num_of_tags-2, 7)
                 a = transition[:-1, t] # (num_of_tags-2,)
                 b = emission[x[j-1], t] # (1,)
-                previous_all_scores = np.unique((pi + a[:,None]).flatten())
-                previous_all_scores = np.pad(previous_all_scores, [0, max(k-len(previous_all_scores),0)], mode='constant', constant_values=-np.inf)
+                unique_values, unique_index = np.unique((pi + a[:,None]), return_index=True) 
+                previous_all_scores = (np.ones(pi.shape) * -np.inf).flatten()
+                for i,o in zip(unique_index, unique_values): 
+                    previous_all_scores[i] = o
                 topk = previous_all_scores.argsort()[-k:][::-1] # big to small
                 argmax[j, t] = topk // k # big: 0, small: -1
                 score[j, t] = previous_all_scores[topk] + b
@@ -171,7 +175,7 @@ class HMM:
         return
 
 if __name__ == "__main__":
-    DATA_FOLDER = Path('./dataset/')
+    DATA_FOLDER = Path('../dataset/')
     AL = DATA_FOLDER/'AL'
     AL_train = AL/'train'
     AL_dev_x = AL/'dev.in'
@@ -179,5 +183,5 @@ if __name__ == "__main__":
     AL_out_4 = AL/'dev.p4.out'
     hmm = HMM(AL_train)
     hmm.train()
-    hmm.predict_top_k(AL_dev_y, AL_out_4, k=20)
+    hmm.predict_top_k(AL_dev_y, AL_out_4, k=7)
     print("success")
