@@ -1,20 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-"""
-Laon-CRF
-    : Easy-to-use Linear Chain Conditional Random Fields
-
-Author: Seong-Jin Kim
-License: MIT License
-Version: 0.0
-Email: lancifollia@gmail.com
-Created: May 13, 2015
-
-Copyright (c) 2015 Seong-Jin Kim
-"""
-
-
 from read_corpus import read_conll_corpus
 from feature import FeatureSet, STARTING_LABEL_INDEX
 
@@ -394,12 +377,13 @@ class LinearChainCRF():
 
 
 # For testing
-crf = LinearChainCRF()
+if __name__ == "__main__":
+    crf = LinearChainCRF()
 
-crf.train('data/chunking/simple_train.data', 'data/chunking/model_5.json')
-crf.load('data/chunking/model_5.json')
-crf.test('data/chunking/simple_test.data')
+    crf.train('data/chunking/simple_train.data', 'data/chunking/model_5.json')
+    crf.load('data/chunking/model_5.json')
+    crf.test('data/chunking/simple_test.data')
 
-#crf.train('data/chunking_2/train.txt', 'data/chunking_2/model_4.json')
-#crf.load('data/chunking_2/model_4.json')
-#crf.test('data/chunking_2/test.txt')
+    #crf.train('data/chunking_2/train.txt', 'data/chunking_2/model_4.json')
+    #crf.load('data/chunking_2/model_4.json')
+    #crf.test('data/chunking_2/test.txt')
