@@ -1,7 +1,7 @@
 from read_corpus import read_conll_corpus
 from feature import FeatureSet, STARTING_LABEL_INDEX
 
-from math import exp, log
+from numpy import exp, log
 import numpy as np
 import time
 import json

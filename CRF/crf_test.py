@@ -7,7 +7,7 @@ if __name__ == '__main__':
     datafile = '../dataset/EN/train_small'
     modelfile = 'parameters'
     test_corpus_filename = '../dataset/EN/dev.out'
-    output_filename = 'crf_output'
+    output_filename = 'output'
     regularization = 10
 
     crf = LinearChainCRF(datafile, modelfile, regularization)
