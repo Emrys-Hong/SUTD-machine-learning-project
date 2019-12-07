@@ -5,40 +5,22 @@ import numpy as np
 
 # POS_TAGS = ["CC", "CD", "DT", "EX", "FW", "IN", "JJ", "JJR", "JJS", "LS", "MD", "NN", "NNS", "NNP", "NNPS", "PDT", "POS", "PRP", "PRP$", "RB", "RBR", "RBS", "RP", "SYM", "TO", "UH", "VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "WDT", "WP", "WP$", "WRB"]
 
-def readFile(systemRun, numberOfSentencesToTrain, currentCount):
-    sentences = []
-    sentence = []
-    with open(systemRun, 'rb') as datafile:
-        for line in datafile:
-            if not line.strip(): 
-                continue
-            if line.startswith("*x*"): # copy right notice
-                continue
-            if line.startswith("==="):
-                if sentence == []:
-                    continue
-                if currentCount == numberOfSentencesToTrain:
-                    return sentences
-                else: 
-                    sentences.append(sentence)
-                    currentCount += 1
-                    sentence = []
-                    continue
-            if line.startswith("["):
-                line = line[1:-2].strip()
-            line = line.split()
-            for observation in line:
-                wordTagTuple = observation.split('/')
-                if len(wordTagTuple) == 2:
-                    word, tag = wordTagTuple
-                else: # for words that have /
-                    tag = wordTagTuple[-1]
-                    word = '/'.join(wordTagTuple[:-1])
-                word = word.upper()
-                sentence.append((word, tag))
-    sentences.append(sentence)
-    currentCount += 1
-    return sentences
+
+def readFile(filename):
+    with open(filename) as f:
+        lines = f.readlines()
+    x = [] 
+    temp_x = [] 
+    for l in lines:
+        if len(l) == 1:
+            x.append(temp_x)
+            temp_x = [] 
+            continue
+        xx, yy = l.split()
+        temp_x.append( (xx, yy) )
+    if len(temp_x) != 0:
+        x.append(temp_x)
+    return x 
 
 def getCountsFromSentences(sentences):
     SYMBOLS_SEEN = set()

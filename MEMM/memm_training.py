@@ -1,5 +1,6 @@
 import sys
 from memm import *
+from filter import readFile
 
 if len(sys.argv) == 1:
 	epsilon = 0.1 				# This is convergence threshold for Lambda
@@ -15,7 +16,7 @@ print(num_sentence_to_train)
 # Begin training
 numpy.set_printoptions(threshold=sys.maxint)
 
-sentences = readSentences("../dataset/AL/train", num_sentence_to_train)
+sentences = readFile("../dataset/EN/train")
 
 symbolsSeen, POS_tagsSeen, map_wordPOS_count, map_POSPOS_count, map_POS_count, map_word_count = getCountsFromSentences(sentences)
 map_symbol_index, map_POS_index, transition_probabilities, emission_probabilities = createConditionalProbabilitiesTables(sentences, False)
@@ -34,7 +35,6 @@ TPM = initTPM(map_index_symbol, map_index_POS)
 
 # Divide (o,s) into |S| buckets
 buckets = divideBuckets(sentences, map_POS_index)
-
 last_feature_list =  buildLastFeature(max_num_features, C, map_index_symbol, map_index_POS)
 
 # Initialize Lambda as 1 then learn from training data
