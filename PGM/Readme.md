@@ -1,4 +1,4 @@
-# Probabilistic Models
+# Probabilistic Graphical Models (Pure python implementaion)
 
 These are the pure python implementation for the following probabilistic models:
 
