@@ -1,10 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-
-from utils.exceptions import FileFormatError
-
-
 def read_conll_corpus(filename):
     """
     Read a corpus file with a format used in CoNLL.
@@ -25,7 +18,7 @@ def read_conll_corpus(filename):
             if element_size is 0:
                 element_size = len(words)
             elif element_size is not len(words):
-                raise FileFormatError
+                raise BaseError('File format wrong')
             X.append(words[:-1])
             Y.append(words[-1])
     if len(X) > 0:
