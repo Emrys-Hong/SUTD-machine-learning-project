@@ -6,7 +6,7 @@ import numpy as np
 import time
 import json
 from collections import Counter
-
+from scipy.optimize import fmin_l_bfgs_b
 SCALING_THRESHOLD = 1e250
 
 
@@ -117,7 +117,7 @@ class LinearChainCRF:
         return alpha, beta, Z, scaling_dic
     
 
-    def _log_likelihood(self):
+    def _log_likelihood(self, x):
         """
         Calculate likelihood and gradient
         """
@@ -125,7 +125,8 @@ class LinearChainCRF:
         expected_counts = np.zeros(len(self.feature_set))
 
         total_logZ = 0
-        for X_features in self._get_training_feature_data():
+        training_data = self._get_training_feature_data()
+        for X_features in training_data:
             potential_table = self._generate_potential_table(X_features, inference=False)
             alpha, beta, Z, scaling_dic = self._forward_backward(len(X_features), potential_table)
             total_logZ += log(Z) + sum(log(scaling_coefficient) for _, scaling_coefficient in scaling_dic.items())
@@ -153,10 +154,12 @@ class LinearChainCRF:
 
         likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)
         gradients = empirical_counts - expected_counts - self.params/self.squared_sigma
-
-        return likelihood * -1, -gradients
+        self.nll = likelihood * -1
+        print(f'   Log Likelihood: {self.nll}')
+        return self.nll, -gradients
 
     def train(self, epoch=50):
+        self.params = np.random.randn(len(self.feature_set))
         # Estimates parameters to maximize log-likelihood of the corpus.
         start_time = time.time()
         print(' ******** Start Training *********')
@@ -166,13 +169,14 @@ class LinearChainCRF:
         print('   iter(sit): likelihood')
         print('   ------------------------')
         
-        for _ in range(epoch):
-            log_likelihood, gradient = self._log_likelihood()
-            print(f'   Log Likelihood: {log_likelihood}')
-            self.params -= gradient
+        #for _ in range(epoch):
+        #    log_likelihood, gradient = self._log_likelihood()
+        #    print(f'   Log Likelihood: {log_likelihood}')
+        #    self.params -= gradient
+        fmin_l_bfgs_b(func=self._log_likelihood, x0=self.params, pgtol=0.01)
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
-        print('* Likelihood: %s' % str(log_likelihood))
+        print('* Likelihood: %s' % str(self.nll))
         print(' ******** Finished Training *********')
 
         self.save_model(self.model_filename)
@@ -250,7 +254,6 @@ class LinearChainCRF:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
-        self.params = np.zeros(len(self.feature_set))
         
     def save_model(self, model_filename):
         model = {"feature_dic": self.feature_set.serialize_feature_dic(),
