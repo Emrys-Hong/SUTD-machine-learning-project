@@ -7,7 +7,6 @@ import time
 import json
 from collections import Counter
 
-SCALING_THRESHOLD = 1e250
 
 
 class LinearChainCRF:
@@ -71,35 +70,17 @@ class LinearChainCRF:
     def _forward_backward(self, time_length, potential_table):
         num_labels = len(self.label_dic)
         alpha = np.zeros((time_length, num_labels))
-        scaling_dic = dict()
         t = 0
         for label_id in range(num_labels):
             alpha[t, label_id] = potential_table[t][STARTING_LABEL_INDEX, label_id]
         #alpha[0, :] = potential_table[0][STARTING_LABEL_INDEX, :]  # slow
         t = 1
         while t < time_length:
-            scaling_time = None
-            scaling_coefficient = None
-            overflow_occured = False
             label_id = 1
             while label_id < num_labels:
                 alpha[t, label_id] = np.dot(alpha[t-1,:], potential_table[t][:,label_id])
-                if alpha[t, label_id] > SCALING_THRESHOLD:
-                    if overflow_occured:
-                        print('******** Consecutive overflow ********')
-                        raise BaseException()
-                    overflow_occured = True
-                    scaling_time = t - 1
-                    scaling_coefficient = SCALING_THRESHOLD
-                    scaling_dic[scaling_time] = scaling_coefficient
-                    break
-                else:
-                    label_id += 1
-            if overflow_occured:
-                alpha[t-1] /= scaling_coefficient
-                alpha[t] = 0
-            else:
-                t += 1
+                label_id += 1
+            t += 1
 
         beta = np.zeros((time_length, num_labels))
         t = time_length - 1
@@ -109,12 +90,10 @@ class LinearChainCRF:
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
                 beta[t, label_id] = np.dot(beta[t+1,:], potential_table[t+1][label_id,:])
-            if t in scaling_dic.keys():
-                beta[t] /= scaling_dic[t]
 
         Z = sum(alpha[time_length-1])
 
-        return alpha, beta, Z, scaling_dic
+        return alpha, beta, Z
     
 
     def _log_likelihood(self):
@@ -127,17 +106,14 @@ class LinearChainCRF:
         total_logZ = 0
         for X_features in self._get_training_feature_data():
             potential_table = self._generate_potential_table(X_features, inference=False)
-            alpha, beta, Z, scaling_dic = self._forward_backward(len(X_features), potential_table)
-            total_logZ += log(Z) + sum(log(scaling_coefficient) for _, scaling_coefficient in scaling_dic.items())
+            alpha, beta, Z = self._forward_backward(len(X_features), potential_table)
+            total_logZ += log(Z)
             for t in range(len(X_features)):
                 potential = potential_table[t]
                 for (prev_y, y), feature_ids in X_features[t]:
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
-                        if t in scaling_dic.keys():
-                            prob = (alpha[t, y] * beta[t, y] * scaling_dic[t])/Z
-                        else:
-                            prob = (alpha[t, y] * beta[t, y])/Z
+                        prob = (alpha[t, y] * beta[t, y])/Z
                     elif t == 0:
                         if prev_y is not STARTING_LABEL_INDEX:
                             continue
