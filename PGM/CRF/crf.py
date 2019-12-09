@@ -117,10 +117,13 @@ class LinearChainCRF:
         return alpha, beta, Z, scaling_dic
     
 
-    def _log_likelihood(self, x):
+    def _log_likelihood(self, params):
         """
         Calculate likelihood and gradient
         """
+        # previous iteration
+        self.params = params
+
         empirical_counts = self.feature_set.get_empirical_counts()
         expected_counts = np.zeros(len(self.feature_set))
 
@@ -160,6 +163,7 @@ class LinearChainCRF:
 
     def train(self, epoch=50):
         self.params = np.random.randn(len(self.feature_set))
+        self.params = np.zeros(len(self.feature_set))
         # Estimates parameters to maximize log-likelihood of the corpus.
         start_time = time.time()
         print(' ******** Start Training *********')
@@ -173,9 +177,8 @@ class LinearChainCRF:
         #    log_likelihood, gradient = self._log_likelihood()
         #    print(f'   Log Likelihood: {log_likelihood}')
         #    self.params -= gradient
-        fmin_l_bfgs_b(func=self._log_likelihood, x0=self.params, pgtol=0.01)
+        self.params, self.nll, information = fmin_l_bfgs_b(func=self._log_likelihood, x0=self.params, pgtol=0.01)
         print('   ========================')
-        print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(self.nll))
         print(' ******** Finished Training *********')
 
