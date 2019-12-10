@@ -166,8 +166,9 @@ class LinearChainCRF:
         
         for i in range(epoch):
             neg_log_likelihood, gradient = self._log_likelihood()
-            print(f'   Iteration: {i}, NLL: {neg_log_likelihood}')
-            self.params -= gradient
+            print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
+            # The key: gradient clipping for more stable answer
+            self.params -= np.clip(gradient, -5, 5) / (i+1)**0.5
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
@@ -216,7 +217,7 @@ class LinearChainCRF:
             max_table[t, label_id] = potential_table[t][STARTING_LABEL_INDEX, label_id]
         for t in range(1, time_length):
             for label_id in range(1, self.num_labels):
-                max_value = -float('inf')
+                max_value = -np.inf
                 max_label_id = None
                 for prev_label_id in range(1, self.num_labels):
                     value = max_table[t-1, prev_label_id] * potential_table[t][prev_label_id, label_id]
