@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 from collections import Counter
 
 import numpy as np
@@ -8,6 +5,30 @@ import numpy as np
 
 STARTING_LABEL = '*'        # Label of t=-1
 STARTING_LABEL_INDEX = 0
+import re
+
+re_punc = r'^[^a-zA-Z0-9]+$'
+re_hash = r'^#'
+re_at = r'^@'
+re_num = r'\d'  # just remove all words with numbers
+re_url = r'(^http:|\.com$)'
+
+def map_func(X):
+    for i in range(len(X)):
+        x = X[i][0].strip()
+        if re.match(re_punc, x):
+            x = '#PUNC#'
+        #elif re.match(re_hash, x):
+        #    x = '#HASH#'
+        elif re.match(re_at, x ):
+            x = '#AT#'
+        elif re.match(re_num, x ):
+            x = '#NUM#'
+        #elif re.match(re_url, x ):
+        #    x = '#URL#'
+        #x = x.lower()
+        X[i][0] = x
+    return X
 
 
 def default_feature_func(_, X, t):
@@ -36,6 +57,43 @@ def default_feature_func(_, X, t):
     return features
 
 
+def customed_feature_func(_, X, t):
+    #get feat
+    length = len(X)
+    features = list()
+    
+    #U[0,1,2,3,-1,-2,-3] b[0,1;0,-1]    
+    features.append('U[0]:%s' % X[t][0])
+    if t < length-1:
+        features.append('U[+1]:%s' % (X[t+1][0]))
+        features.append('B[0]:%s %s' % (X[t][0], X[t+1][0]))
+        if t < length-2:
+            features.append('U[+2]:%s' % (X[t+2][0]))
+            if t < length-3:
+                features.append('U[+3]:%s' % (X[t+3][0]))
+    if t > 0:
+        features.append('U[-1]:%s' % (X[t-1][0]))
+        features.append('B[-1]:%s %s' % (X[t-1][0], X[t][0]))
+        if t > 1:
+            features.append('U[-2]:%s' % (X[t-2][0]))
+            if t > 2:
+                features.append('U[-3]:%s' % (X[t-3][0]))
+
+    
+    # add prefix/suffix
+    '''
+    try:
+        features.append(X[t][0][:3])
+    except: 
+        pass
+    try:
+        features.append(X[t][0][-3:])
+    except:
+        pass
+    '''
+    return features
+
+
 class FeatureSet():
     feature_dic = dict()
     observation_set = set()
@@ -44,31 +102,33 @@ class FeatureSet():
 
     label_dic = {STARTING_LABEL: STARTING_LABEL_INDEX}
     label_array = [STARTING_LABEL]
-
-    feature_func = default_feature_func
+    #change here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    feature_func = customed_feature_func
 
     def __init__(self, feature_func=None):
         # Sets a custom feature function.
         if feature_func is not None:
             self.feature_func = feature_func
 
-    def scan(self, data):
+    def scan(self, data, premap = True):
         """
         Constructs a feature set, a label set,
             and a counter of empirical counts of each feature from the input data.
         :param data: A list of (X, Y) pairs. (X: observation vector , Y: label vector)
         """
         # Constructs a feature set, and counts empirical counts.
+        
         for X, Y in data:
+            if premap == True: x = map_func(X)
             prev_y = STARTING_LABEL_INDEX
             for t in range(len(X)):
                 # Gets a label id
                 try:
-                    y = self.label_dic[Y[t]]
+                     y = self.label_dic[Y[t]]
                 except KeyError:
-                    y = len(self.label_dic)
-                    self.label_dic[Y[t]] = y
-                    self.label_array.append(Y[t])
+                     y = len(self.label_dic)
+                     self.label_dic[Y[t]] = y
+                     self.label_array.append(Y[t])
                 # Adds features
                 self._add(prev_y, y, X, t)
                 prev_y = y
