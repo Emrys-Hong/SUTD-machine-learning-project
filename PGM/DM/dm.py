@@ -1,25 +1,62 @@
 from read_corpus import read_conll_corpus
 from feature import FeatureSet, STARTING_LABEL_INDEX
 
-from numpy import exp, log
 import numpy as np
 import time
 import json
 from collections import Counter
-from scipy.optimize import fmin_l_bfgs_b
-SCALING_THRESHOLD = 1e250
+import os
 
+def logsumexp(a):
+    """
+    Compute the log of the sum of exponentials of an array ``a``, :math:`\log(\exp(a_0) + \exp(a_1) + ...)`
+    """
+    b = a.max()
+    return b + np.log((np.exp(a-b)).sum())
 
-class LinearChainCRF:
-    """
-    Linear-chain Conditional Random Field
-    """
-    def __init__(self, corpus_filename, model_filename, squared_sigma):
+class DM:
+    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', decay=None, structual_label=None, epsilon=0):
         self.squared_sigma = squared_sigma
         # Read the training corpus
         self.corpus_filename = corpus_filename
         self.model_filename = model_filename
+        assert model_type in ['CRF', 'MEMM', 'SSVM', 'SP'], "Unsupported model type"
+        self.model_type = model_type
+        print(f' ******** {self.model_type} *********')
+        self.decay = decay
+        
+        if model_type == 'SP':
+            # "hard" max
+            self.max_func = np.max
+        else:
+            # softmax
+            self.max_func = logsumexp
+
+        if model_type == 'SSVM':
+            self.structual_label = structual_label
+            self.epsilon = epsilon
         pass
+    
+    @classmethod
+    def get_CRF(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'CRF', 0.501)
+
+
+    @classmethod
+    def get_MEMM(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 1.5)
+
+    @classmethod
+    def get_SP(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'SP', 0.501)
+
+    @classmethod
+    def get_SSVM(cls, corpus_filename, model_filename, squared_sigma):
+        # add more loss to this label
+        label = ['B-SBAR']
+        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', 0.501, structual_label=label, epsilon=0.1)
+
+
 
     def _read_corpus(self, filename):
         return read_conll_corpus(filename)
@@ -28,11 +65,11 @@ class LinearChainCRF:
         return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in self.training_data]
 
 
-    def _generate_potential_table(self, X, inference=True):
+    def _log_potential_table(self, X, inference=True):
         """
         Generates a potential table using given observations.
         * potential_table[t][prev_y, y]
-            := exp(inner_product(params, feature_vector(prev_y, y, X, t)))
+            := (inner_product(params, feature_vector(prev_y, y, X, t)))
             (where 0 <= t < len(X))
         """
         num_labels = len(self.label_dic)
@@ -53,138 +90,145 @@ class LinearChainCRF:
                         table[:, y] += score
                     else:
                         table[prev_y, y] += score
-            table = np.exp(table)
             
             # Make everything except the starting label 0
             if t == 0:
-                table[STARTING_LABEL_INDEX+1:] = 0
+                table[STARTING_LABEL_INDEX+1:] = -np.inf # TODO is this correct?
 
             # Make transition to starting label and transition from the starting label 0
             else:
-                table[:,STARTING_LABEL_INDEX] = 0
-                table[STARTING_LABEL_INDEX,:] = 0
+                table[:,STARTING_LABEL_INDEX] = -np.inf # TODO is this correct?
+                table[STARTING_LABEL_INDEX,:] = -np.inf # TODO is this correct?
             tables.append(table)
 
         return tables
 
 
     def _forward_backward(self, time_length, potential_table):
+        """
+        Everything have taken the log
+        """
+        alpha = self._forward(time_length, potential_table)
+        beta = self._backward(time_length, potential_table)
+        Z = self.max_func(alpha[time_length-1])
+
+        return alpha, beta, Z
+
+
+    def _forward(self, time_length, potential_table):
         num_labels = len(self.label_dic)
         alpha = np.zeros((time_length, num_labels))
-        scaling_dic = dict()
         t = 0
         for label_id in range(num_labels):
             alpha[t, label_id] = potential_table[t][STARTING_LABEL_INDEX, label_id]
-        #alpha[0, :] = potential_table[0][STARTING_LABEL_INDEX, :]  # slow
+
         t = 1
         while t < time_length:
-            scaling_time = None
-            scaling_coefficient = None
-            overflow_occured = False
             label_id = 1
             while label_id < num_labels:
-                alpha[t, label_id] = np.dot(alpha[t-1,:], potential_table[t][:,label_id])
-                if alpha[t, label_id] > SCALING_THRESHOLD:
-                    if overflow_occured:
-                        print('******** Consecutive overflow ********')
-                        raise BaseException()
-                    overflow_occured = True
-                    scaling_time = t - 1
-                    scaling_coefficient = SCALING_THRESHOLD
-                    scaling_dic[scaling_time] = scaling_coefficient
-                    break
-                else:
-                    label_id += 1
-            if overflow_occured:
-                alpha[t-1] /= scaling_coefficient
-                alpha[t] = 0
-            else:
-                t += 1
+                alpha[t, label_id] = self.max_func(alpha[t-1,:] + potential_table[t][:,label_id])
+                label_id += 1
+            t += 1
+        return alpha
 
+
+    def _backward(self, time_length, potential_table):
+        num_labels = len(self.label_dic)
         beta = np.zeros((time_length, num_labels))
         t = time_length - 1
         for label_id in range(num_labels):
-            beta[t, label_id] = 1.0
-        #beta[time_length - 1, :] = 1.0     # slow
+            beta[t, label_id] = 0 
+
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
-                beta[t, label_id] = np.dot(beta[t+1,:], potential_table[t+1][label_id,:])
-            if t in scaling_dic.keys():
-                beta[t] /= scaling_dic[t]
+                beta[t, label_id] = self.max_func(beta[t+1,:] + potential_table[t+1][label_id,:])
+        
+        return beta
 
-        Z = sum(alpha[time_length-1])
 
-        return alpha, beta, Z, scaling_dic
-    
-
-    def _log_likelihood(self, params):
+    def _log_likelihood(self):
         """
         Calculate likelihood and gradient
         """
-        # previous iteration
-        self.params = params
-
         empirical_counts = self.feature_set.get_empirical_counts()
         expected_counts = np.zeros(len(self.feature_set))
 
         total_logZ = 0
-        training_data = self._get_training_feature_data()
-        for X_features in training_data:
-            potential_table = self._generate_potential_table(X_features, inference=False)
-            alpha, beta, Z, scaling_dic = self._forward_backward(len(X_features), potential_table)
-            total_logZ += log(Z) + sum(log(scaling_coefficient) for _, scaling_coefficient in scaling_dic.items())
+        for X_features in self._get_training_feature_data():
+            potential_table = self._log_potential_table(X_features, inference=False)
+            alpha, beta, Z = self._forward_backward(len(X_features), potential_table)
+            total_logZ += Z
             for t in range(len(X_features)):
                 potential = potential_table[t]
                 for (prev_y, y), feature_ids in X_features[t]:
+                    prob = 0
+                    if self.model_type == 'SSVM' and y in self.structual_label:
+                        # the loss added can be tuned
+                        prob += self.epsilon
+
+
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
-                        if t in scaling_dic.keys():
-                            prob = (alpha[t, y] * beta[t, y] * scaling_dic[t])/Z
-                        else:
-                            prob = (alpha[t, y] * beta[t, y])/Z
+                        if self.model_type == "MEMM": # For MEMM use local normalization
+                            prob +=  (alpha[t, y]) - self.max_func(alpha[t, :])
+                        else: # For other models using global normalization
+                            prob +=  (alpha[t, y] + beta[t, y]) - Z                                   
+                        prob = np.exp(prob).clip(0., 1.)
+
                     elif t == 0:
                         if prev_y is not STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (potential[STARTING_LABEL_INDEX, y] * beta[t, y])/Z
+                            if self.model_type == "MEMM":
+                                prob += (potential[STARTING_LABEL_INDEX, y]) # TODO should i minus localnormalization? which one?
+                            else: 
+                                prob += (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
+                            prob = np.exp(prob).clip(0., 1.)
+
                     else:
                         if prev_y is STARTING_LABEL_INDEX or y is STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (alpha[t-1, prev_y] * potential[prev_y, y] * beta[t, y]) / Z
+                            if self.model_type == "MEMM":
+                                prob += (alpha[t-1, prev_y] + potential[prev_y, y]) - self.max_func(alpha[t-1, :])
+                            else:
+                                prob += (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
+                            prob = np.exp(prob).clip(0., 1.)
+
                     for fid in feature_ids:
                         expected_counts[fid] += prob
 
-        likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)
+        # TODO: make sure this is log likelihood
+        log_likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)        
         gradients = empirical_counts - expected_counts - self.params/self.squared_sigma
-        self.nll = likelihood * -1
-        print(f'   Log Likelihood: {self.nll}')
-        return self.nll, -gradients
 
-    def train(self, epoch=50):
-        self.params = np.random.randn(len(self.feature_set))
-        self.params = np.zeros(len(self.feature_set))
+        return -log_likelihood, -gradients
+
+
+    def train(self, epoch=15):
         # Estimates parameters to maximize log-likelihood of the corpus.
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
-        print('* Start L-BGFS')
+        print('* Start Gradient Descend')
         print('   ========================')
-        print('   iter(sit): likelihood')
+        print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
-        #for _ in range(epoch):
-        #    log_likelihood, gradient = self._log_likelihood()
-        #    print(f'   Log Likelihood: {log_likelihood}')
-        #    self.params -= gradient
-        self.params, self.nll, information = fmin_l_bfgs_b(func=self._log_likelihood, x0=self.params, pgtol=0.01)
+        for i in range(epoch):
+            neg_log_likelihood, gradient = self._log_likelihood()
+            print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
+            # The key: gradient clipping for more stable answer
+            self.params -= np.clip(gradient, -5, 5) / (i+1) ** self.decay
         print('   ========================')
-        print('* Likelihood: %s' % str(self.nll))
+        print('   (iter: iteration, sit: sub iteration)')
+        print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
         self.save_model(self.model_filename)
         elapsed_time = time.time() - start_time
-        print('* Elapsed time: %f' % elapsed_time)
+        print(f'* Elapsed time: {elapsed_time//60} mins')
+
 
     def test(self, test_corpus_filename, output_filename):
         if self.params is None:
@@ -205,21 +249,17 @@ class LinearChainCRF:
                     if Y[t] == Yprime[t]:
                         correct_count += 1
         
-        import os
-        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), output_filename))
+        print('* Test output has been saved at "%s/%s"' % (os.getcwd(), output_filename))
 
     def inference(self, X):
         """
         Finds the best label sequence.
         """
-        potential_table = self._generate_potential_table(X, inference=True)
+        potential_table = self._log_potential_table(X, inference=True)
         Yprime = self.viterbi(X, potential_table)
         return Yprime
 
     def viterbi(self, X, potential_table):
-        """
-        The Viterbi algorithm with backpointers
-        """
         time_length = len(X)
         max_table = np.zeros((time_length, self.num_labels))
         argmax_table = np.zeros((time_length, self.num_labels), dtype='int64')
@@ -229,10 +269,10 @@ class LinearChainCRF:
             max_table[t, label_id] = potential_table[t][STARTING_LABEL_INDEX, label_id]
         for t in range(1, time_length):
             for label_id in range(1, self.num_labels):
-                max_value = -float('inf')
+                max_value = -np.inf
                 max_label_id = None
                 for prev_label_id in range(1, self.num_labels):
-                    value = max_table[t-1, prev_label_id] * potential_table[t][prev_label_id, label_id]
+                    value = max_table[t-1, prev_label_id] + potential_table[t][prev_label_id, label_id] # Not sure whether this is correct
                     if value > max_value:
                         max_value = value
                         max_label_id = prev_label_id
@@ -254,9 +294,13 @@ class LinearChainCRF:
         self.feature_set = FeatureSet()
         self.feature_set.scan(self.training_data)
         self.label_dic, self.label_array = self.feature_set.get_labels()
+        if self.model_type == 'SSVM': self.structual_label = [self.label_dic[o] for o in self.structual_label]
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        # zero initialization is better than random initialization
+        self.params = np.zeros(len(self.feature_set))
+        print("* Initialized weight of size: %d" % len(self.feature_set))
         
     def save_model(self, model_filename):
         model = {"feature_dic": self.feature_set.serialize_feature_dic(),

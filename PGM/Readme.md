@@ -17,8 +17,10 @@ These are the pure python implementation for the following probabilistic models:
 7. PCFG
 
 ## Requirements
-
-You only need `numpy`
+```
+python>=3.6
+numpy
+```
 
 ## Usage
 
