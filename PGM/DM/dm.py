@@ -15,7 +15,7 @@ def logsumexp(a):
     return b + np.log((np.exp(a-b)).sum())
 
 class DM:
-    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', decay=None, structual_label=None, epsilon=0):
+    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', structual_label=None, epsilon=0):
         self.squared_sigma = squared_sigma
         # Read the training corpus
         self.corpus_filename = corpus_filename
@@ -23,7 +23,6 @@ class DM:
         assert model_type in ['CRF', 'MEMM', 'SSVM', 'SP'], "Unsupported model type"
         self.model_type = model_type
         print(f' ******** {self.model_type} *********')
-        self.decay = decay
         
         if model_type == 'SP':
             # "hard" max
@@ -39,22 +38,22 @@ class DM:
     
     @classmethod
     def get_CRF(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'CRF', 0.501)
+        return cls(corpus_filename, model_filename, squared_sigma, 'CRF')
 
 
     @classmethod
     def get_MEMM(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 1.5)
+        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM')
 
     @classmethod
     def get_SP(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'SP', 0.501)
+        return cls(corpus_filename, model_filename, squared_sigma, 'SP')
 
     @classmethod
     def get_SSVM(cls, corpus_filename, model_filename, squared_sigma):
         # add more loss to this label
         label = ['B-SBAR']
-        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', 0.501, structual_label=label, epsilon=0.1)
+        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', structual_label=label, epsilon=0.1)
 
 
 
@@ -205,8 +204,12 @@ class DM:
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15):
+    def train(self, epoch=15, decay=None):
         # Estimates parameters to maximize log-likelihood of the corpus.
+        if decay == None:
+            if self.model_type == 'MEMM': decay = 1.5
+            else: decay = 0.501
+
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
@@ -219,7 +222,7 @@ class DM:
             neg_log_likelihood, gradient = self._log_likelihood()
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= np.clip(gradient, -5, 5) / (i+1) ** self.decay
+            self.params -= np.clip(gradient, -5, 5) / (i+1) ** decay
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
@@ -298,6 +301,9 @@ class DM:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        self._initialize_parameters()
+
+    def _initialize_parameters(self):
         # zero initialization is better than random initialization
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
