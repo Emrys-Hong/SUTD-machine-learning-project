@@ -4,10 +4,10 @@ import argparse
 from crf import LinearChainCRF
 
 if __name__ == '__main__':
-    datafile = '../../dataset/EN/train'
+    datafile = '../../dataset/EN/train_small'
     modelfile = 'parameters'
     regularization = 10
-    epoch = 20
+    epoch = 10
 
     crf = LinearChainCRF(datafile, modelfile, regularization)
     crf.load_data()

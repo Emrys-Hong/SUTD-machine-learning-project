@@ -1,13 +1,17 @@
 from read_corpus import read_conll_corpus
 from feature import FeatureSet, STARTING_LABEL_INDEX
 
-from numpy import exp, log
 import numpy as np
 import time
 import json
 from collections import Counter
 
-
+def logsumexp(a):
+    """
+    Compute the log of the sum of exponentials of an array ``a``, :math:`\log(\exp(a_0) + \exp(a_1) + ...)`
+    """
+    b = a.max()
+    return b + np.log((np.exp(a-b)).sum())
 
 class LinearChainCRF:
     """
@@ -27,11 +31,11 @@ class LinearChainCRF:
         return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in self.training_data]
 
 
-    def _generate_potential_table(self, X, inference=True):
+    def _log_potential_table(self, X, inference=True):
         """
         Generates a potential table using given observations.
         * potential_table[t][prev_y, y]
-            := exp(inner_product(params, feature_vector(prev_y, y, X, t)))
+            := (inner_product(params, feature_vector(prev_y, y, X, t)))
             (where 0 <= t < len(X))
         """
         num_labels = len(self.label_dic)
@@ -52,22 +56,24 @@ class LinearChainCRF:
                         table[:, y] += score
                     else:
                         table[prev_y, y] += score
-            table = np.exp(table)
             
             # Make everything except the starting label 0
             if t == 0:
-                table[STARTING_LABEL_INDEX+1:] = 0
+                table[STARTING_LABEL_INDEX+1:] = -np.inf # TODO is this correct?
 
             # Make transition to starting label and transition from the starting label 0
             else:
-                table[:,STARTING_LABEL_INDEX] = 0
-                table[STARTING_LABEL_INDEX,:] = 0
+                table[:,STARTING_LABEL_INDEX] = -np.inf # TODO is this correct?
+                table[STARTING_LABEL_INDEX,:] = -np.inf # TODO is this correct?
             tables.append(table)
 
         return tables
 
 
     def _forward_backward(self, time_length, potential_table):
+        """
+        Everything have taken the log
+        """
         num_labels = len(self.label_dic)
         alpha = np.zeros((time_length, num_labels))
         t = 0
@@ -78,20 +84,20 @@ class LinearChainCRF:
         while t < time_length:
             label_id = 1
             while label_id < num_labels:
-                alpha[t, label_id] = np.dot(alpha[t-1,:], potential_table[t][:,label_id])
+                alpha[t, label_id] = logsumexp(alpha[t-1,:] + potential_table[t][:,label_id])
                 label_id += 1
             t += 1
 
         beta = np.zeros((time_length, num_labels))
         t = time_length - 1
         for label_id in range(num_labels):
-            beta[t, label_id] = 1.0
+            beta[t, label_id] = 0 # TODO not sure if this is correct
         #beta[time_length - 1, :] = 1.0     # slow
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
-                beta[t, label_id] = np.dot(beta[t+1,:], potential_table[t+1][label_id,:])
+                beta[t, label_id] = logsumexp(beta[t+1,:] + potential_table[t+1][label_id,:])
 
-        Z = sum(alpha[time_length-1])
+        Z = logsumexp(alpha[time_length-1])
 
         return alpha, beta, Z
     
@@ -105,32 +111,37 @@ class LinearChainCRF:
 
         total_logZ = 0
         for X_features in self._get_training_feature_data():
-            potential_table = self._generate_potential_table(X_features, inference=False)
+            potential_table = self._log_potential_table(X_features, inference=False)
             alpha, beta, Z = self._forward_backward(len(X_features), potential_table)
-            total_logZ += log(Z)
+            total_logZ += Z
             for t in range(len(X_features)):
                 potential = potential_table[t]
                 for (prev_y, y), feature_ids in X_features[t]:
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
-                        prob = (alpha[t, y] * beta[t, y])/Z
+                        # TODO not sure for this one
+                        prob =         (alpha[t, y] + beta[t, y]) - Z                                   
+                        prob = np.exp(prob).clip(0.,1.)
                     elif t == 0:
                         if prev_y is not STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (potential[STARTING_LABEL_INDEX, y] * beta[t, y])/Z
+                            prob =      (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
+                            prob = np.exp(prob).clip(0., 1.)
                     else:
                         if prev_y is STARTING_LABEL_INDEX or y is STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (alpha[t-1, prev_y] * potential[prev_y, y] * beta[t, y]) / Z
+                            prob =    (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
+                            prob = np.exp(prob).clip(0., 1.)
                     for fid in feature_ids:
                         expected_counts[fid] += prob
 
-        likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)
+        # TODO: make sure this is log likelihood
+        log_likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)        
         gradients = empirical_counts - expected_counts - self.params/self.squared_sigma
 
-        return likelihood * -1, -gradients
+        return -log_likelihood, -gradients
 
     def train(self, epoch=50):
         # Estimates parameters to maximize log-likelihood of the corpus.
@@ -142,7 +153,7 @@ class LinearChainCRF:
         print('   iter(sit): likelihood')
         print('   ------------------------')
         
-        for _ in range(epoch):
+        for i in range(epoch):
             log_likelihood, gradient = self._log_likelihood()
             print(f'   Log Likelihood: {log_likelihood}')
             self.params -= gradient
@@ -181,7 +192,7 @@ class LinearChainCRF:
         """
         Finds the best label sequence.
         """
-        potential_table = self._generate_potential_table(X, inference=True)
+        potential_table = self._log_potential_table(X, inference=True)
         Yprime = self.viterbi(X, potential_table)
         return Yprime
 
