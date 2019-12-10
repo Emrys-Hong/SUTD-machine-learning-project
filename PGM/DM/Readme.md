@@ -22,3 +22,10 @@ python dm_test.py
 python>=3.6
 numpy
 ```
+
+## Acknowledge
+some code are adapted from the following links:
+1. https://github.com/timvieira/crf/
+2. https://github.com/lancifollia/crf
+3. https://github.com/kohjingyu/CRF-sentiment-analysis
+4. https://github.com/kohjingyu/hidden-markov-model 
