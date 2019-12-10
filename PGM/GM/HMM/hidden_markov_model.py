@@ -117,12 +117,12 @@ class HMM:
                 path: (len(x), )
                 log(max_score)
         """
-        score = np.ones( (len(x)+2, len(self.tags)-2, k) ) * -1
-        argmax = np.ones( (len(x)+2, len(self.tags)-2, k), dtype=np.int) * -1
+        score = np.zeros( (len(x)+2, len(self.tags)-2, k) ) 
+        argmax = np.zeros( (len(x)+2, len(self.tags)-2, k), dtype=np.int) 
         transition, emission = np.log(self.transition), np.log(self.emission)
         # initialization at j=1
         score[1, :, 0] = (transition[-1, :-1] + emission[x[0], :-2])
-
+        score[1, :, 1:] = -np.inf
         # j=2, ..., n
         for j in range(2, len(x)+1): 
             for t in range(len(self.tags)-2):
@@ -186,14 +186,3 @@ class HMM:
                 f.write('\n')
         return
 
-if __name__ == "__main__":
-    DATA_FOLDER = Path('../../../dataset/')
-    AL = DATA_FOLDER/'AL'
-    AL_train = AL/'train'
-    AL_dev_x = AL/'dev.in'
-    AL_dev_y = AL/'dev.out'
-    AL_out_4 = AL/'dev.p4.out'
-    hmm = HMM(AL_train)
-    hmm.train()
-    hmm.predict_top_k(AL_dev_y, AL_out_4, k=7)
-    print("success")
