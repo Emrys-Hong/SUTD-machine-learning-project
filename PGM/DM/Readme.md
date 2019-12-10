@@ -29,3 +29,4 @@ some code are adapted from the following links:
 2. https://github.com/lancifollia/crf
 3. https://github.com/kohjingyu/CRF-sentiment-analysis
 4. https://github.com/kohjingyu/hidden-markov-model 
+5. https://github.com/bplank/sp/blob/master/simpletagger.py
