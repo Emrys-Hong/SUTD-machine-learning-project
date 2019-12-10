@@ -5,6 +5,7 @@ import numpy as np
 import time
 import json
 from collections import Counter
+import os
 
 def logsumexp(a):
     """
@@ -74,12 +75,20 @@ class LinearChainCRF:
         """
         Everything have taken the log
         """
+        alpha = self._forward(time_length, potential_table)
+        beta = self._backward(time_length, potential_table)
+        Z = logsumexp(alpha[time_length-1])
+
+        return alpha, beta, Z
+
+
+    def _forward(self, time_length, potential_table):
         num_labels = len(self.label_dic)
         alpha = np.zeros((time_length, num_labels))
         t = 0
         for label_id in range(num_labels):
             alpha[t, label_id] = potential_table[t][STARTING_LABEL_INDEX, label_id]
-        #alpha[0, :] = potential_table[0][STARTING_LABEL_INDEX, :]  # slow
+
         t = 1
         while t < time_length:
             label_id = 1
@@ -87,20 +96,22 @@ class LinearChainCRF:
                 alpha[t, label_id] = logsumexp(alpha[t-1,:] + potential_table[t][:,label_id])
                 label_id += 1
             t += 1
+        return alpha
 
+
+    def _backward(self, time_length, potential_table):
+        num_labels = len(self.label_dic)
         beta = np.zeros((time_length, num_labels))
         t = time_length - 1
         for label_id in range(num_labels):
             beta[t, label_id] = 0 # TODO not sure if this is correct
-        #beta[time_length - 1, :] = 1.0     # slow
+
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
                 beta[t, label_id] = logsumexp(beta[t+1,:] + potential_table[t+1][label_id,:])
+        
+        return beta
 
-        Z = logsumexp(alpha[time_length-1])
-
-        return alpha, beta, Z
-    
 
     def _log_likelihood(self):
         """
@@ -120,19 +131,19 @@ class LinearChainCRF:
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
                         # TODO not sure for this one
-                        prob =         (alpha[t, y] + beta[t, y]) - Z                                   
-                        prob = np.exp(prob).clip(0.,1.)
+                        prob =  (alpha[t, y] + beta[t, y]) - Z                                   
+                        prob = np.exp(prob).clip(0., 1.)
                     elif t == 0:
                         if prev_y is not STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob =      (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
+                            prob = (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
                             prob = np.exp(prob).clip(0., 1.)
                     else:
                         if prev_y is STARTING_LABEL_INDEX or y is STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob =    (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
+                            prob = (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
                             prob = np.exp(prob).clip(0., 1.)
                     for fid in feature_ids:
                         expected_counts[fid] += prob
@@ -148,23 +159,23 @@ class LinearChainCRF:
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
-        print('* Start L-BGFS')
+        print('* Start Gradient Descend')
         print('   ========================')
-        print('   iter(sit): likelihood')
+        print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
         for i in range(epoch):
-            log_likelihood, gradient = self._log_likelihood()
-            print(f'   Log Likelihood: {log_likelihood}')
+            neg_log_likelihood, gradient = self._log_likelihood()
+            print(f'   Iteration: {i}, NLL: {neg_log_likelihood}')
             self.params -= gradient
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
-        print('* Likelihood: %s' % str(log_likelihood))
+        print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
         self.save_model(self.model_filename)
         elapsed_time = time.time() - start_time
-        print('* Elapsed time: %f' % elapsed_time)
+        print(f'* Elapsed time: {elapsed_time//60} mins')
 
     def test(self, test_corpus_filename, output_filename):
         if self.params is None:
@@ -185,8 +196,7 @@ class LinearChainCRF:
                     if Y[t] == Yprime[t]:
                         correct_count += 1
         
-        import os
-        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), output_filename))
+        print('* Test output has been saved at "%s/%s"' % (os.getcwd(), output_filename))
 
     def inference(self, X):
         """
@@ -197,9 +207,6 @@ class LinearChainCRF:
         return Yprime
 
     def viterbi(self, X, potential_table):
-        """
-        The Viterbi algorithm with backpointers
-        """
         time_length = len(X)
         max_table = np.zeros((time_length, self.num_labels))
         argmax_table = np.zeros((time_length, self.num_labels), dtype='int64')
@@ -238,6 +245,7 @@ class LinearChainCRF:
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
         self.params = np.zeros(len(self.feature_set))
+        print("* Initialized weight of size: %d" % len(self.feature_set))
         
     def save_model(self, model_filename):
         model = {"feature_dic": self.feature_set.serialize_feature_dic(),

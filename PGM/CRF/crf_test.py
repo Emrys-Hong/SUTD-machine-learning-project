@@ -6,7 +6,7 @@ from crf import LinearChainCRF
 if __name__ == '__main__':
     datafile = '../dataset/EN/train_small'
     modelfile = 'parameters'
-    test_corpus_filename = '../dataset/EN/dev.out'
+    test_corpus_filename = '../../dataset/EN/dev.out'
     output_filename = 'output'
     regularization = 10
 
