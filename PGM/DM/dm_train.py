@@ -7,6 +7,6 @@ if __name__ == '__main__':
     regularization = 10
     epoch = 30
 
-    crf = DM.get_MEMM(datafile, modelfile, regularization)
+    crf = DM.get_SP(datafile, modelfile, regularization)
     crf.load_data()
     crf.train(epoch)

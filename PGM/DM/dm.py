@@ -24,6 +24,13 @@ class DM:
         self.model_type = model_type
         print(f' ******** {self.model_type} *********')
         self.decay = decay
+        
+        if model_type == 'SP':
+            # "hard" max
+            self.max_func = np.max
+        else:
+            # softmax
+            self.max_func = logsumexp
         pass
     
     @classmethod
@@ -33,7 +40,11 @@ class DM:
 
     @classmethod
     def get_MEMM(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 2)
+        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 1.5)
+
+    @classmethod
+    def get_SP(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'SP', 0.501)
 
 
     def _read_corpus(self, filename):
@@ -88,7 +99,7 @@ class DM:
         """
         alpha = self._forward(time_length, potential_table)
         beta = self._backward(time_length, potential_table)
-        Z = logsumexp(alpha[time_length-1])
+        Z = self.max_func(alpha[time_length-1])
 
         return alpha, beta, Z
 
@@ -104,7 +115,7 @@ class DM:
         while t < time_length:
             label_id = 1
             while label_id < num_labels:
-                alpha[t, label_id] = logsumexp(alpha[t-1,:] + potential_table[t][:,label_id])
+                alpha[t, label_id] = self.max_func(alpha[t-1,:] + potential_table[t][:,label_id])
                 label_id += 1
             t += 1
         return alpha
@@ -119,7 +130,7 @@ class DM:
 
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
-                beta[t, label_id] = logsumexp(beta[t+1,:] + potential_table[t+1][label_id,:])
+                beta[t, label_id] = self.max_func(beta[t+1,:] + potential_table[t+1][label_id,:])
         
         return beta
 
@@ -142,7 +153,7 @@ class DM:
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
                         if self.model_type == "MEMM": # For MEMM use local normalization
-                            prob =  (alpha[t, y]) - logsumexp(alpha[t, :])
+                            prob =  (alpha[t, y]) - self.max_func(alpha[t, :])
                         else: # For other models using global normalization
                             prob =  (alpha[t, y] + beta[t, y]) - Z                                   
                         prob = np.exp(prob).clip(0., 1.)
@@ -162,7 +173,7 @@ class DM:
                             continue
                         else:
                             if self.model_type == "MEMM":
-                                prob = (alpha[t-1, prev_y] + potential[prev_y, y]) - logsumexp(alpha[t-1, :])
+                                prob = (alpha[t-1, prev_y] + potential[prev_y, y]) - self.max_func(alpha[t-1, :])
                             else:
                                 prob = (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
                             prob = np.exp(prob).clip(0., 1.)
