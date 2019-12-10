@@ -15,7 +15,7 @@ def logsumexp(a):
     return b + np.log((np.exp(a-b)).sum())
 
 class DM:
-    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type, decay):
+    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', decay=None, structual_label=None, epsilon=0):
         self.squared_sigma = squared_sigma
         # Read the training corpus
         self.corpus_filename = corpus_filename
@@ -31,6 +31,10 @@ class DM:
         else:
             # softmax
             self.max_func = logsumexp
+
+        if model_type == 'SSVM':
+            self.structual_label = structual_label
+            self.epsilon = epsilon
         pass
     
     @classmethod
@@ -45,6 +49,13 @@ class DM:
     @classmethod
     def get_SP(cls, corpus_filename, model_filename, squared_sigma):
         return cls(corpus_filename, model_filename, squared_sigma, 'SP', 0.501)
+
+    @classmethod
+    def get_SSVM(cls, corpus_filename, model_filename, squared_sigma):
+        # add more loss to this label
+        label = ['B-SBAR']
+        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', 0.501, structual_label=label, epsilon=0.1)
+
 
 
     def _read_corpus(self, filename):
@@ -150,12 +161,18 @@ class DM:
             for t in range(len(X_features)):
                 potential = potential_table[t]
                 for (prev_y, y), feature_ids in X_features[t]:
+                    prob = 0
+                    if self.model_type == 'SSVM' and y in self.structual_label:
+                        # the loss added can be tuned
+                        prob += self.epsilon
+
+
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
                         if self.model_type == "MEMM": # For MEMM use local normalization
-                            prob =  (alpha[t, y]) - self.max_func(alpha[t, :])
+                            prob +=  (alpha[t, y]) - self.max_func(alpha[t, :])
                         else: # For other models using global normalization
-                            prob =  (alpha[t, y] + beta[t, y]) - Z                                   
+                            prob +=  (alpha[t, y] + beta[t, y]) - Z                                   
                         prob = np.exp(prob).clip(0., 1.)
 
                     elif t == 0:
@@ -163,9 +180,9 @@ class DM:
                             continue
                         else:
                             if self.model_type == "MEMM":
-                                prob = (potential[STARTING_LABEL_INDEX, y]) # TODO should i minus localnormalization? which one?
+                                prob += (potential[STARTING_LABEL_INDEX, y]) # TODO should i minus localnormalization? which one?
                             else: 
-                                prob = (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
+                                prob += (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
                             prob = np.exp(prob).clip(0., 1.)
 
                     else:
@@ -173,9 +190,9 @@ class DM:
                             continue
                         else:
                             if self.model_type == "MEMM":
-                                prob = (alpha[t-1, prev_y] + potential[prev_y, y]) - self.max_func(alpha[t-1, :])
+                                prob += (alpha[t-1, prev_y] + potential[prev_y, y]) - self.max_func(alpha[t-1, :])
                             else:
-                                prob = (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
+                                prob += (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
                             prob = np.exp(prob).clip(0., 1.)
 
                     for fid in feature_ids:
@@ -277,6 +294,7 @@ class DM:
         self.feature_set = FeatureSet()
         self.feature_set.scan(self.training_data)
         self.label_dic, self.label_array = self.feature_set.get_labels()
+        if self.model_type == 'SSVM': self.structual_label = [self.label_dic[o] for o in self.structual_label]
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
