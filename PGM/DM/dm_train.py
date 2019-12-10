@@ -1,7 +1,5 @@
-#!/usr/bin/env python
-
 import argparse
-from crf import LinearChainCRF
+from dm import DM
 
 if __name__ == '__main__':
     datafile = '../../dataset/EN/train_middle'
@@ -9,6 +7,6 @@ if __name__ == '__main__':
     regularization = 10
     epoch = 30
 
-    crf = LinearChainCRF(datafile, modelfile, regularization)
+    crf = DM.get_MEMM(datafile, modelfile, regularization)
     crf.load_data()
     crf.train(epoch)

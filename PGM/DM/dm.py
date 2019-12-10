@@ -14,16 +14,27 @@ def logsumexp(a):
     b = a.max()
     return b + np.log((np.exp(a-b)).sum())
 
-class LinearChainCRF:
-    """
-    Linear-chain Conditional Random Field
-    """
-    def __init__(self, corpus_filename, model_filename, squared_sigma):
+class DM:
+    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type, decay):
         self.squared_sigma = squared_sigma
         # Read the training corpus
         self.corpus_filename = corpus_filename
         self.model_filename = model_filename
+        assert model_type in ['CRF', 'MEMM', 'SSVM', 'SP'], "Unsupported model type"
+        self.model_type = model_type
+        print(f' ******** {self.model_type} *********')
+        self.decay = decay
         pass
+    
+    @classmethod
+    def get_CRF(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'CRF', 0.501)
+
+
+    @classmethod
+    def get_MEMM(cls, corpus_filename, model_filename, squared_sigma):
+        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 2)
+
 
     def _read_corpus(self, filename):
         return read_conll_corpus(filename)
@@ -104,7 +115,7 @@ class LinearChainCRF:
         beta = np.zeros((time_length, num_labels))
         t = time_length - 1
         for label_id in range(num_labels):
-            beta[t, label_id] = 0 # TODO not sure if this is correct
+            beta[t, label_id] = 0 
 
         for t in range(time_length-2, -1, -1):
             for label_id in range(1, num_labels):
@@ -130,21 +141,32 @@ class LinearChainCRF:
                 for (prev_y, y), feature_ids in X_features[t]:
                     # Adds p(prev_y, y | X, t)
                     if prev_y == -1:
-                        # TODO not sure for this one
-                        prob =  (alpha[t, y] + beta[t, y]) - Z                                   
+                        if self.model_type == "MEMM": # For MEMM use local normalization
+                            prob =  (alpha[t, y]) - logsumexp(alpha[t, :])
+                        else: # For other models using global normalization
+                            prob =  (alpha[t, y] + beta[t, y]) - Z                                   
                         prob = np.exp(prob).clip(0., 1.)
+
                     elif t == 0:
                         if prev_y is not STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
+                            if self.model_type == "MEMM":
+                                prob = (potential[STARTING_LABEL_INDEX, y]) # TODO should i minus localnormalization? which one?
+                            else: 
+                                prob = (potential[STARTING_LABEL_INDEX, y] + beta[t, y]) - Z 
                             prob = np.exp(prob).clip(0., 1.)
+
                     else:
                         if prev_y is STARTING_LABEL_INDEX or y is STARTING_LABEL_INDEX:
                             continue
                         else:
-                            prob = (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
+                            if self.model_type == "MEMM":
+                                prob = (alpha[t-1, prev_y] + potential[prev_y, y]) - logsumexp(alpha[t-1, :])
+                            else:
+                                prob = (alpha[t-1, prev_y] + potential[prev_y, y] + beta[t, y]) - Z
                             prob = np.exp(prob).clip(0., 1.)
+
                     for fid in feature_ids:
                         expected_counts[fid] += prob
 
@@ -154,7 +176,8 @@ class LinearChainCRF:
 
         return -log_likelihood, -gradients
 
-    def train(self, epoch=50):
+
+    def train(self, epoch=15):
         # Estimates parameters to maximize log-likelihood of the corpus.
         start_time = time.time()
         print(' ******** Start Training *********')
@@ -168,7 +191,7 @@ class LinearChainCRF:
             neg_log_likelihood, gradient = self._log_likelihood()
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= np.clip(gradient, -5, 5) / (i+1)**0.501
+            self.params -= np.clip(gradient, -5, 5) / (i+1) ** self.decay
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
@@ -177,6 +200,7 @@ class LinearChainCRF:
         self.save_model(self.model_filename)
         elapsed_time = time.time() - start_time
         print(f'* Elapsed time: {elapsed_time//60} mins')
+
 
     def test(self, test_corpus_filename, output_filename):
         if self.params is None:
@@ -245,6 +269,7 @@ class LinearChainCRF:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        # zero initialization is better than random initialization
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
         
