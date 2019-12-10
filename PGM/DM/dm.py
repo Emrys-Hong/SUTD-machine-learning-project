@@ -1,5 +1,5 @@
-from read_corpus import read_conll_corpus
-from feature import FeatureSet, STARTING_LABEL_INDEX
+from .read_corpus import read_conll_corpus
+from .feature import FeatureSet, STARTING_LABEL_INDEX
 
 import numpy as np
 import time
@@ -15,7 +15,7 @@ def logsumexp(a):
     return b + np.log((np.exp(a-b)).sum())
 
 class DM:
-    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', decay=None, structual_label=None, epsilon=0):
+    def __init__(self, corpus_filename, model_filename, squared_sigma, model_type='CRF', structual_label=None, epsilon=0):
         self.squared_sigma = squared_sigma
         # Read the training corpus
         self.corpus_filename = corpus_filename
@@ -23,7 +23,6 @@ class DM:
         assert model_type in ['CRF', 'MEMM', 'SSVM', 'SP'], "Unsupported model type"
         self.model_type = model_type
         print(f' ******** {self.model_type} *********')
-        self.decay = decay
         
         if model_type == 'SP':
             # "hard" max
@@ -39,22 +38,22 @@ class DM:
     
     @classmethod
     def get_CRF(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'CRF', 0.501)
+        return cls(corpus_filename, model_filename, squared_sigma, 'CRF')
 
 
     @classmethod
     def get_MEMM(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM', 1.5)
+        return cls(corpus_filename, model_filename, squared_sigma, 'MEMM')
 
     @classmethod
     def get_SP(cls, corpus_filename, model_filename, squared_sigma):
-        return cls(corpus_filename, model_filename, squared_sigma, 'SP', 0.501)
+        return cls(corpus_filename, model_filename, squared_sigma, 'SP')
 
     @classmethod
     def get_SSVM(cls, corpus_filename, model_filename, squared_sigma):
         # add more loss to this label
         label = ['B-SBAR']
-        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', 0.501, structual_label=label, epsilon=0.1)
+        return cls(corpus_filename, model_filename, squared_sigma, 'SSVM', structual_label=label, epsilon=0.1)
 
 
 
@@ -205,8 +204,12 @@ class DM:
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15):
+    def train(self, epoch=15, lr=1, decay=None, start_epoch=1):
         # Estimates parameters to maximize log-likelihood of the corpus.
+        if decay == None:
+            if self.model_type == 'MEMM': decay = 1.5
+            else: decay = 0.501
+
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
@@ -215,17 +218,21 @@ class DM:
         print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
-        for i in range(epoch):
+        for i in range(start_epoch, start_epoch+epoch):
             neg_log_likelihood, gradient = self._log_likelihood()
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= np.clip(gradient, -5, 5) / (i+1) ** self.decay
+            self.params -= lr * np.clip(gradient, -5, 5) / (i+1) ** decay
+            
+            if neg_log_likelihood <= self.neg_log_likelihood:
+                self.neg_log_likehood = neg_log_likelihood
+                self.save_model(self.model_filename, verbose=False)
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
-        self.save_model(self.model_filename)
+        self.save_model(self.model_filename, verbose=True)
         elapsed_time = time.time() - start_time
         print(f'* Elapsed time: {elapsed_time//60} mins')
 
@@ -298,18 +305,24 @@ class DM:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        self._initialize_parameters()
+        self.neg_log_likelihood = np.inf
+
+    def _initialize_parameters(self):
         # zero initialization is better than random initialization
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
         
-    def save_model(self, model_filename):
-        model = {"feature_dic": self.feature_set.serialize_feature_dic(),
+    def save_model(self, model_filename, verbose=True):
+        model = {
+                 "feature_dic": self.feature_set.serialize_feature_dic(),
                  "num_features": self.feature_set.num_features,
                  "labels": self.feature_set.label_array,
-                 "params": list(self.params)}
+                 "params": list(self.params),
+                 "neg_log_likelihood": self.log_likelihood
+                }
         with open(model_filename, 'w') as f: json.dump(model, f, ensure_ascii=False, indent=2, separators=(',', ':'))
-        import os
-        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
+        if verbose: print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
 
     def load_model(self, model_filename):
         f = open(model_filename)
@@ -321,6 +334,7 @@ class DM:
         self.label_dic, self.label_array = self.feature_set.get_labels()
         self.num_labels = len(self.label_array)
         self.params = np.asarray(model['params'])
+        self.neg_log_likelihood = model['neg_log_likelihood']
 
         print('CRF model loaded')
 

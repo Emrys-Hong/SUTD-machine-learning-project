@@ -28,6 +28,13 @@ def get_train_data(filename):
     
     return x, y
 
+def get_index_index(argmax, index, k):
+    count = 0
+    for o in argmax:
+        if o == index:
+            return count
+        if o//k == index//k:
+            count += 1
 
 def get_test_data(filename, word2index):
     """Return:
@@ -110,40 +117,45 @@ class HMM:
                 path: (len(x), )
                 log(max_score)
         """
-        score = np.zeros( (len(x)+2, len(self.tags)-2, k) )
-        argmax = np.zeros( (len(x)+2, len(self.tags)-2, k), dtype=np.int)
+        score = np.zeros( (len(x)+2, len(self.tags)-2, k) ) 
+        argmax = np.zeros( (len(x)+2, len(self.tags)-2, k), dtype=np.int) 
         transition, emission = np.log(self.transition), np.log(self.emission)
         # initialization at j=1
-        score[1, :] = (transition[-1, :-1] + emission[x[0], :-2])[:, None] 
-
+        score[1, :, 0] = (transition[-1, :-1] + emission[x[0], :-2])
+        score[1, :, 1:] = -np.inf
         # j=2, ..., n
         for j in range(2, len(x)+1): 
             for t in range(len(self.tags)-2):
                 pi = score[j-1, :]  # (num_of_tags-2, 7)
                 a = transition[:-1, t] # (num_of_tags-2,)
                 b = emission[x[j-1], t] # (1,)
-                unique_values, unique_index = np.unique((pi + a[:,None]), return_index=True) 
-                previous_all_scores = (np.ones(pi.shape) * -np.inf).flatten()
-                for i,o in zip(unique_index, unique_values): 
-                    previous_all_scores[i] = o
+                previous_all_scores = ((pi + a[:, None])).flatten()
                 topk = previous_all_scores.argsort()[-k:][::-1] # big to small
-                argmax[j, t] = topk // k # big: 0, small: -1
+                argmax[j, t] = topk # big: 0, small: -1 # topk // k is the real argument
                 score[j, t] = previous_all_scores[topk] + b
 
         # j=n+1 step
         pi = score[len(x)] # (num_of_tags-2, 7)
         a = transition[:-1, -1]
-        argmax_stop_k = (pi + a[:,None]).flatten().argsort()[-k:][::-1][-1] // k # big to small
-        max_stop = np.min(pi+a[:,None])
+        argmax_stop = (pi + a[:,None]).flatten().argsort()[-k:][::-1] # big to small
+        log_likelihood = np.min(pi+a[:,None])
         argmax = argmax[2:-1] # (len(x)-1, num_of_tags-2, 7)
         
         # decoding
-        path = [argmax_stop_k]
-        temp_index = argmax_stop_k
+
+        ## Initialize the last pointer backward
+        temp_index = argmax_stop[-1] # range from 0 ~ k * ( len(tags) - 1 )
+        temp_index_index = get_index_index(argmax_stop, temp_index, k) # range from 0 ~ k-1, next index in next tag
+        temp_arg = temp_index // k # range from 0 ~ k-1, next tag index
+        
+        path = [argmax_stop[-1]//k] # initialize path as an array
+
         for i in range(len(argmax)-1, -1, -1):
-            temp_index = argmax[i, temp_index, 0]
-            path.append(temp_index)
-        return path[::-1], max_stop
+            temp_index = argmax[i, temp_arg, temp_index_index]
+            temp_index_index = get_index_index(argmax[i, temp_arg], temp_index, k)
+            temp_arg = temp_index // k
+            path.append(temp_arg)
+        return path[::-1], log_likelihood 
 
     def predict_top_k(self, dev_x_filename, output_filename, k=7):
         assert hasattr(self, 'transition') and hasattr(self, 'emission'), "run self.train() first"
@@ -174,14 +186,3 @@ class HMM:
                 f.write('\n')
         return
 
-if __name__ == "__main__":
-    DATA_FOLDER = Path('../dataset/')
-    AL = DATA_FOLDER/'AL'
-    AL_train = AL/'train'
-    AL_dev_x = AL/'dev.in'
-    AL_dev_y = AL/'dev.out'
-    AL_out_4 = AL/'dev.p4.out'
-    hmm = HMM(AL_train)
-    hmm.train()
-    hmm.predict_top_k(AL_dev_y, AL_out_4, k=7)
-    print("success")
