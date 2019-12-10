@@ -319,7 +319,7 @@ class DM:
                  "num_features": self.feature_set.num_features,
                  "labels": self.feature_set.label_array,
                  "params": list(self.params),
-                 "neg_log_likelihood": self.log_likelihood
+                 "neg_log_likelihood": self.neg_log_likelihood
                 }
         with open(model_filename, 'w') as f: json.dump(model, f, ensure_ascii=False, indent=2, separators=(',', ':'))
         if verbose: print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
@@ -334,7 +334,10 @@ class DM:
         self.label_dic, self.label_array = self.feature_set.get_labels()
         self.num_labels = len(self.label_array)
         self.params = np.asarray(model['params'])
-        self.neg_log_likelihood = model['neg_log_likelihood']
+        if 'neg_log_likelihood' in model:
+            self.neg_log_likelihood = model['neg_log_likelihood']
+        else:
+            self.neg_log_likelihood = np.inf
 
         print('CRF model loaded')
 

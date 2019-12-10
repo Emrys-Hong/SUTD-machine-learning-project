@@ -102,15 +102,15 @@ class FeatureSet():
 
     label_dic = {STARTING_LABEL: STARTING_LABEL_INDEX}
     label_array = [STARTING_LABEL]
-    #change here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    feature_func = customed_feature_func
+    #change here!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    feature_func = default_feature_func
 
     def __init__(self, feature_func=None):
         # Sets a custom feature function.
         if feature_func is not None:
             self.feature_func = feature_func
 
-    def scan(self, data, premap = True):
+    def scan(self, data, premap = False):
         """
         Constructs a feature set, a label set,
             and a counter of empirical counts of each feature from the input data.
