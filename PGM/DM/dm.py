@@ -1,5 +1,5 @@
-from read_corpus import read_conll_corpus
-from feature import FeatureSet, STARTING_LABEL_INDEX
+from .read_corpus import read_conll_corpus
+from .feature import FeatureSet, STARTING_LABEL_INDEX
 
 import numpy as np
 import time
@@ -204,7 +204,7 @@ class DM:
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15, decay=None):
+    def train(self, epoch=15, lr=1, decay=None, start_epoch=1):
         # Estimates parameters to maximize log-likelihood of the corpus.
         if decay == None:
             if self.model_type == 'MEMM': decay = 1.5
@@ -218,17 +218,21 @@ class DM:
         print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
-        for i in range(epoch):
+        for i in range(start_epoch, start_epoch+epoch):
             neg_log_likelihood, gradient = self._log_likelihood()
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= np.clip(gradient, -5, 5) / (i+1) ** decay
+            self.params -= lr * np.clip(gradient, -5, 5) / (i+1) ** decay
+            
+            if neg_log_likelihood <= self.neg_log_likelihood:
+                self.neg_log_likehood = neg_log_likelihood
+                self.save_model(self.model_filename, verbose=False)
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
-        self.save_model(self.model_filename)
+        self.save_model(self.model_filename, verbose=True)
         elapsed_time = time.time() - start_time
         print(f'* Elapsed time: {elapsed_time//60} mins')
 
@@ -302,20 +306,23 @@ class DM:
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
         self._initialize_parameters()
+        self.neg_log_likelihood = np.inf
 
     def _initialize_parameters(self):
         # zero initialization is better than random initialization
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
         
-    def save_model(self, model_filename):
-        model = {"feature_dic": self.feature_set.serialize_feature_dic(),
+    def save_model(self, model_filename, verbose=True):
+        model = {
+                 "feature_dic": self.feature_set.serialize_feature_dic(),
                  "num_features": self.feature_set.num_features,
                  "labels": self.feature_set.label_array,
-                 "params": list(self.params)}
+                 "params": list(self.params),
+                 "neg_log_likelihood": self.neg_log_likelihood
+                }
         with open(model_filename, 'w') as f: json.dump(model, f, ensure_ascii=False, indent=2, separators=(',', ':'))
-        import os
-        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
+        if verbose: print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
 
     def load_model(self, model_filename):
         f = open(model_filename)
@@ -327,6 +334,10 @@ class DM:
         self.label_dic, self.label_array = self.feature_set.get_labels()
         self.num_labels = len(self.label_array)
         self.params = np.asarray(model['params'])
+        if 'neg_log_likelihood' in model:
+            self.neg_log_likelihood = model['neg_log_likelihood']
+        else:
+            self.neg_log_likelihood = np.inf
 
         print('CRF model loaded')
 
