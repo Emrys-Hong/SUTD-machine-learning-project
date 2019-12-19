@@ -8,6 +8,8 @@ import random
 from collections import Counter
 import os
 
+from scipy.optimize import fmin_l_bfgs_b
+
 def logsumexp(a):
     """
     Compute the log of the sum of exponentials of an array ``a``, :math:`\log(\exp(a_0) + \exp(a_1) + ...)`
@@ -148,11 +150,13 @@ class DM:
         return beta
 
 
-    def _log_likelihood(self, train_set):
+    def _log_likelihood(self, parameters):
         """
         Calculate likelihood and gradient
         train_set: a number < len(dataset), if None, will use the entire training set
         """
+        self.params = parameters
+        train_set = None # add this line first
         if train_set == None: 
             train_data = self._get_training_feature_data()
             empirical_counts = self.feature_set.get_empirical_counts()
@@ -213,15 +217,12 @@ class DM:
         log_likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)        
         gradients = empirical_counts - expected_counts - self.params/self.squared_sigma
 
+        print('neg_log_likelihood: ', -log_likelihood)
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15, lr=1, decay=None, start_epoch=1, train_set=None):
+    def train(self, prec=0.1):
         # Estimates parameters to maximize log-likelihood of the corpus.
-        if decay == None:
-            if self.model_type == 'MEMM': decay = 1.5
-            else: decay = 0.501
-
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
@@ -230,17 +231,18 @@ class DM:
         print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
-        for i in range(start_epoch, start_epoch+epoch):
-            neg_log_likelihood, gradient = self._log_likelihood(train_set)
-            print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
-            # The key: gradient clipping for more stable answer
-            self.params -= lr * np.clip(gradient, -3, 3) / (i+1) ** decay
-            
-            if neg_log_likelihood <= self.neg_log_likelihood:
-                self.neg_log_likelihood = neg_log_likelihood
-                self.save_model(self.model_filename)
+        # for i in range(start_epoch, start_epoch+epoch):
+        #     neg_log_likelihood, gradient = self._log_likelihood(train_set)
+        #     print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
+        #     # The key: gradient clipping for more stable answer
+        #     self.params -= lr * np.clip(gradient, -3, 3) / (i+1) ** decay
+        #     
+        #     if neg_log_likelihood <= self.neg_log_likelihood:
+        #         self.neg_log_likelihood = neg_log_likelihood
+        #         self.save_model(self.model_filename)
+
+        self.params, self.log_likelihood, information = fmin_l_bfgs_b(self._log_likelihood, self.params, pgtol=prec)
         print('   ========================')
-        print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
         self.save_model(self.model_filename)
