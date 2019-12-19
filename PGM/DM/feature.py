@@ -153,30 +153,14 @@ class FeatureSet():
             if feature_string in self.feature_dic.keys():
                 if (prev_y, y) in self.feature_dic[feature_string].keys():
                     self.easy_empirical_counts[self.feature_dic[feature_string][(prev_y, y)]] += 1
-                else:
-                    feature_id = self.num_features
-                    self.feature_dic[feature_string][(prev_y, y)] = feature_id
-                    self.easy_empirical_counts[feature_id] += 1
-                    self.num_features += 1
+                else: 
+                    assert False
                 if (-1, y) in self.feature_dic[feature_string].keys():
                     self.easy_empirical_counts[self.feature_dic[feature_string][(-1, y)]] += 1
-                else:
-                    feature_id = self.num_features
-                    self.feature_dic[feature_string][(-1, y)] = feature_id
-                    self.easy_empirical_counts[feature_id] += 1
-                    self.num_features += 1
-            else:
-                self.feature_dic[feature_string] = dict()
-                # Bigram feature
-                feature_id = self.num_features
-                self.feature_dic[feature_string][(prev_y, y)] = feature_id
-                self.easy_empirical_counts[feature_id] += 1
-                self.num_features += 1
-                # Unigram feature
-                feature_id = self.num_features
-                self.feature_dic[feature_string][(-1, y)] = feature_id
-                self.easy_empirical_counts[feature_id] += 1
-                self.num_features += 1
+                else: 
+                    assert False
+            else: 
+                assert False
 
     def easy_get_empirical_counts(self):
         empirical_counts = np.ndarray((self.num_features,))

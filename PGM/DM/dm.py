@@ -1,5 +1,5 @@
-from .read_corpus import read_conll_corpus
-from .feature import FeatureSet, STARTING_LABEL_INDEX
+from read_corpus import read_conll_corpus
+from feature import FeatureSet, STARTING_LABEL_INDEX
 
 import numpy as np
 import time
@@ -153,11 +153,13 @@ class DM:
         Calculate likelihood and gradient
         train_set: a number < len(dataset), if None, will use the entire training set
         """
+        # import pdb; pdb.set_trace()
         if train_set == None: 
             train_data = self._get_training_feature_data()
             empirical_counts = self.feature_set.get_empirical_counts()
         else:
             easy_data = random.sample(self.training_data, train_set)
+            # easy_data = self.training_data[:train_set]
             train_data = self._easy_get_training_feature_data(easy_data)
             self.feature_set.easy_scan(easy_data)
             empirical_counts = self.feature_set.easy_get_empirical_counts()
@@ -234,7 +236,7 @@ class DM:
             neg_log_likelihood, gradient = self._log_likelihood(train_set)
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= lr * np.clip(gradient, -3, 3) / (i+1) ** decay
+            self.params -= lr * np.clip(gradient, -1, 1) / (i+1) ** decay
             
             if neg_log_likelihood <= self.neg_log_likelihood:
                 self.neg_log_likelihood = neg_log_likelihood
