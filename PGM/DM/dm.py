@@ -226,13 +226,13 @@ class DM:
             
             if neg_log_likelihood <= self.neg_log_likelihood:
                 self.neg_log_likehood = neg_log_likelihood
-                self.save_model(self.model_filename, verbose=False)
+                self.save_model(self.model_filename)
         print('   ========================')
         print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
-        self.save_model(self.model_filename, verbose=True)
+        self.save_model(self.model_filename)
         elapsed_time = time.time() - start_time
         print(f'* Elapsed time: {elapsed_time//60} mins')
 
@@ -313,7 +313,7 @@ class DM:
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
         
-    def save_model(self, model_filename, verbose=True):
+    def save_model(self, model_filename):
         model = {
                  "feature_dic": self.feature_set.serialize_feature_dic(),
                  "num_features": self.feature_set.num_features,
@@ -322,7 +322,7 @@ class DM:
                  "neg_log_likelihood": self.neg_log_likelihood
                 }
         with open(model_filename, 'w') as f: json.dump(model, f, ensure_ascii=False, indent=2, separators=(',', ':'))
-        if verbose: print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
+        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
 
     def load_model(self, model_filename):
         f = open(model_filename)
