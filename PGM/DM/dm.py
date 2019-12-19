@@ -225,10 +225,9 @@ class DM:
             self.params -= lr * np.clip(gradient, -5, 5) / (i+1) ** decay
             
             if neg_log_likelihood <= self.neg_log_likelihood:
-                self.neg_log_likehood = neg_log_likelihood
+                self.neg_log_likelihood = neg_log_likelihood
                 self.save_model(self.model_filename)
         print('   ========================')
-        print('   (iter: iteration, sit: sub iteration)')
         print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
@@ -305,6 +304,7 @@ class DM:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        print("Reinitialized model parameters")
         self._initialize_parameters()
         self.neg_log_likelihood = np.inf
 
