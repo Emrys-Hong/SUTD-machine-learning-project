@@ -26,7 +26,11 @@ For more detail, you can refer to  `Project.pdf`.
 
 ## Repository Structure
 
-Result is in `main.ipynb`, report is in `report.pdf`
+Result and report is in `main.ipynb`
+
+Output files are under the `dataset/`
+
+To replicate results, you need to install `scipy` and `numpy`, and replicate results in `CRF_AL.ipynb` and  `CRF_EN.ipynb`
 
 ## Collaborators
 

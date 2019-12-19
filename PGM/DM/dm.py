@@ -4,8 +4,11 @@ from .feature import FeatureSet, STARTING_LABEL_INDEX
 import numpy as np
 import time
 import json
+import random
 from collections import Counter
 import os
+
+from scipy.optimize import fmin_l_bfgs_b
 
 def logsumexp(a):
     """
@@ -63,6 +66,8 @@ class DM:
     def _get_training_feature_data(self):
         return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in self.training_data]
 
+    def _easy_get_training_feature_data(self, easy_train):
+        return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in easy_train]
 
     def _log_potential_table(self, X, inference=True):
         """
@@ -145,15 +150,26 @@ class DM:
         return beta
 
 
-    def _log_likelihood(self):
+    def _log_likelihood(self, parameters):
         """
         Calculate likelihood and gradient
+        train_set: a number < len(dataset), if None, will use the entire training set
         """
-        empirical_counts = self.feature_set.get_empirical_counts()
+        self.params = parameters
+        train_set = None # add this line first
+        if train_set == None: 
+            train_data = self._get_training_feature_data()
+            empirical_counts = self.feature_set.get_empirical_counts()
+        else:
+            easy_data = random.sample(self.training_data, train_set)
+            train_data = self._easy_get_training_feature_data(easy_data)
+            self.feature_set.easy_scan(easy_data)
+            empirical_counts = self.feature_set.easy_get_empirical_counts()
+            
         expected_counts = np.zeros(len(self.feature_set))
 
         total_logZ = 0
-        for X_features in self._get_training_feature_data():
+        for X_features in train_data:
             potential_table = self._log_potential_table(X_features, inference=False)
             alpha, beta, Z = self._forward_backward(len(X_features), potential_table)
             total_logZ += Z
@@ -201,15 +217,12 @@ class DM:
         log_likelihood = np.dot(empirical_counts, self.params) - total_logZ - np.sum(np.dot(self.params, self.params))/(self.squared_sigma*2)        
         gradients = empirical_counts - expected_counts - self.params/self.squared_sigma
 
+        print('neg_log_likelihood: ', -log_likelihood)
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15, lr=1, decay=None, start_epoch=1):
+    def train(self, prec=0.1):
         # Estimates parameters to maximize log-likelihood of the corpus.
-        if decay == None:
-            if self.model_type == 'MEMM': decay = 1.5
-            else: decay = 0.501
-
         start_time = time.time()
         print(' ******** Start Training *********')
         print('* Squared sigma:', self.squared_sigma)
@@ -218,21 +231,21 @@ class DM:
         print('   iter(sit): Negative log-likelihood')
         print('   ------------------------')
         
-        for i in range(start_epoch, start_epoch+epoch):
-            neg_log_likelihood, gradient = self._log_likelihood()
-            print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
-            # The key: gradient clipping for more stable answer
-            self.params -= lr * np.clip(gradient, -5, 5) / (i+1) ** decay
-            
-            if neg_log_likelihood <= self.neg_log_likelihood:
-                self.neg_log_likehood = neg_log_likelihood
-                self.save_model(self.model_filename, verbose=False)
+        # for i in range(start_epoch, start_epoch+epoch):
+        #     neg_log_likelihood, gradient = self._log_likelihood(train_set)
+        #     print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
+        #     # The key: gradient clipping for more stable answer
+        #     self.params -= lr * np.clip(gradient, -3, 3) / (i+1) ** decay
+        #     
+        #     if neg_log_likelihood <= self.neg_log_likelihood:
+        #         self.neg_log_likelihood = neg_log_likelihood
+        #         self.save_model(self.model_filename)
+
+        self.params, self.log_likelihood, information = fmin_l_bfgs_b(self._log_likelihood, self.params, pgtol=prec)
         print('   ========================')
-        print('   (iter: iteration, sit: sub iteration)')
-        print('* Likelihood: %s' % str(neg_log_likelihood))
         print(' ******** Finished Training *********')
 
-        self.save_model(self.model_filename, verbose=True)
+        self.save_model(self.model_filename)
         elapsed_time = time.time() - start_time
         print(f'* Elapsed time: {elapsed_time//60} mins')
 
@@ -305,6 +318,7 @@ class DM:
         self.num_labels = len(self.label_array)
         print("* Number of labels: %d" % (self.num_labels-1))
         print("* Number of features: %d" % len(self.feature_set))
+        print("Reinitialized model parameters")
         self._initialize_parameters()
         self.neg_log_likelihood = np.inf
 
@@ -313,7 +327,7 @@ class DM:
         self.params = np.zeros(len(self.feature_set))
         print("* Initialized weight of size: %d" % len(self.feature_set))
         
-    def save_model(self, model_filename, verbose=True):
+    def save_model(self, model_filename):
         model = {
                  "feature_dic": self.feature_set.serialize_feature_dic(),
                  "num_features": self.feature_set.num_features,
@@ -322,7 +336,7 @@ class DM:
                  "neg_log_likelihood": self.neg_log_likelihood
                 }
         with open(model_filename, 'w') as f: json.dump(model, f, ensure_ascii=False, indent=2, separators=(',', ':'))
-        if verbose: print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
+        print('* Trained CRF Model has been saved at "%s/%s"' % (os.getcwd(), model_filename))
 
     def load_model(self, model_filename):
         f = open(model_filename)
