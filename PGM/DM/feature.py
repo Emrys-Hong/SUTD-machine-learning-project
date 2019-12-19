@@ -132,6 +132,57 @@ class FeatureSet():
                 # Adds features
                 self._add(prev_y, y, X, t)
                 prev_y = y
+ 
+    def easy_scan(self, data, premap=False):
+        self.easy_empirical_counts = Counter()
+        for X, Y in data:
+            if premap == True: x = map_func(X)
+            prev_y = STARTING_LABEL_INDEX
+            for t in range(len(X)):
+                # Gets a label id
+                try:
+                     y = self.label_dic[Y[t]]
+                except KeyError:
+                     y = len(self.label_dic)
+                # Adds features
+                self._easy_add(prev_y, y, X, t)
+                prev_y = y
+
+    def _easy_add(self, prev_y, y, X, t):
+        for feature_string in self.feature_func(X, t):
+            if feature_string in self.feature_dic.keys():
+                if (prev_y, y) in self.feature_dic[feature_string].keys():
+                    self.easy_empirical_counts[self.feature_dic[feature_string][(prev_y, y)]] += 1
+                else:
+                    feature_id = self.num_features
+                    self.feature_dic[feature_string][(prev_y, y)] = feature_id
+                    self.easy_empirical_counts[feature_id] += 1
+                    self.num_features += 1
+                if (-1, y) in self.feature_dic[feature_string].keys():
+                    self.easy_empirical_counts[self.feature_dic[feature_string][(-1, y)]] += 1
+                else:
+                    feature_id = self.num_features
+                    self.feature_dic[feature_string][(-1, y)] = feature_id
+                    self.easy_empirical_counts[feature_id] += 1
+                    self.num_features += 1
+            else:
+                self.feature_dic[feature_string] = dict()
+                # Bigram feature
+                feature_id = self.num_features
+                self.feature_dic[feature_string][(prev_y, y)] = feature_id
+                self.easy_empirical_counts[feature_id] += 1
+                self.num_features += 1
+                # Unigram feature
+                feature_id = self.num_features
+                self.feature_dic[feature_string][(-1, y)] = feature_id
+                self.easy_empirical_counts[feature_id] += 1
+                self.num_features += 1
+
+    def easy_get_empirical_counts(self):
+        empirical_counts = np.ndarray((self.num_features,))
+        for feature_id, counts in self.easy_empirical_counts.items():
+            empirical_counts[feature_id] = counts
+        return empirical_counts
 
     def load(self, feature_dic, num_features, label_array):
         self.num_features = num_features

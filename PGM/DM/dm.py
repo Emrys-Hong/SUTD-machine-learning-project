@@ -4,6 +4,7 @@ from .feature import FeatureSet, STARTING_LABEL_INDEX
 import numpy as np
 import time
 import json
+import random
 from collections import Counter
 import os
 
@@ -63,6 +64,8 @@ class DM:
     def _get_training_feature_data(self):
         return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in self.training_data]
 
+    def _easy_get_training_feature_data(self, easy_train):
+        return [[self.feature_set.get_feature_list(X, t) for t in range(len(X))] for X, _ in easy_train]
 
     def _log_potential_table(self, X, inference=True):
         """
@@ -145,15 +148,24 @@ class DM:
         return beta
 
 
-    def _log_likelihood(self):
+    def _log_likelihood(self, train_set):
         """
         Calculate likelihood and gradient
+        train_set: a number < len(dataset), if None, will use the entire training set
         """
-        empirical_counts = self.feature_set.get_empirical_counts()
+        if train_set == None: 
+            train_data = self._get_training_feature_data()
+            empirical_counts = self.feature_set.get_empirical_counts()
+        else:
+            easy_data = random.sample(self.training_data, train_set)
+            train_data = self._easy_get_training_feature_data(easy_data)
+            self.feature_set.easy_scan(easy_data)
+            empirical_counts = self.feature_set.easy_get_empirical_counts()
+            
         expected_counts = np.zeros(len(self.feature_set))
 
         total_logZ = 0
-        for X_features in self._get_training_feature_data():
+        for X_features in train_data:
             potential_table = self._log_potential_table(X_features, inference=False)
             alpha, beta, Z = self._forward_backward(len(X_features), potential_table)
             total_logZ += Z
@@ -204,7 +216,7 @@ class DM:
         return -log_likelihood, -gradients
 
 
-    def train(self, epoch=15, lr=1, decay=None, start_epoch=1):
+    def train(self, epoch=15, lr=1, decay=None, start_epoch=1, train_set=None):
         # Estimates parameters to maximize log-likelihood of the corpus.
         if decay == None:
             if self.model_type == 'MEMM': decay = 1.5
@@ -219,10 +231,10 @@ class DM:
         print('   ------------------------')
         
         for i in range(start_epoch, start_epoch+epoch):
-            neg_log_likelihood, gradient = self._log_likelihood()
+            neg_log_likelihood, gradient = self._log_likelihood(train_set)
             print(f'   Iteration: {i}, Negative Log-likelihood: {neg_log_likelihood}')
             # The key: gradient clipping for more stable answer
-            self.params -= lr * np.clip(gradient, -5, 5) / (i+1) ** decay
+            self.params -= lr * np.clip(gradient, -3, 3) / (i+1) ** decay
             
             if neg_log_likelihood <= self.neg_log_likelihood:
                 self.neg_log_likelihood = neg_log_likelihood
